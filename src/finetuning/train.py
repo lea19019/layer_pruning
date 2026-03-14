@@ -102,7 +102,7 @@ def finetune(
 
     # Model loading
     model_kwargs = {
-        "torch_dtype": torch.float16,
+        "dtype": torch.float16,
         "device_map": "auto",
     }
 

@@ -47,7 +47,7 @@ def run_experiment(config_path: Path):
 
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModelForCausalLM.from_pretrained(
-            model_path, torch_dtype=torch.float16, device_map="auto"
+            model_path, dtype=torch.float16, device_map="auto"
         )
 
         # Load validation data
@@ -143,7 +143,7 @@ def run_experiment(config_path: Path):
     # Load final model for evaluation
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    eval_kwargs = {"torch_dtype": torch.float16, "device_map": "auto"}
+    eval_kwargs = {"dtype": torch.float16, "device_map": "auto"}
     if do_quant and not do_ft:
         # If only quantization (no separate quant step after FT), load with BnB
         from transformers import BitsAndBytesConfig

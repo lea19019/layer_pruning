@@ -72,7 +72,7 @@ def load_and_prune(
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=dtype,
+        dtype=dtype,
         device_map=device_map,
     )
 

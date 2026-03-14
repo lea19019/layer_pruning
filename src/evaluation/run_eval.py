@@ -62,7 +62,7 @@ def main():
 
         tokenizer = AutoTokenizer.from_pretrained(args.model)
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, torch_dtype=torch.float16, device_map="auto"
+            args.model, dtype=torch.float16, device_map="auto"
         )
         hypotheses = translate_batch(
             model, tokenizer, prompts,
