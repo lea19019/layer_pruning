@@ -15,6 +15,23 @@ This project investigates whether interpretability techniques (Information Flow 
 - **Package manager:** UV. Virtual environment at `.venv/`. Activate with `source .venv/bin/activate`.
 - **Python:** 3.11
 
+### Pre-downloaded Models (in `~/.cache/huggingface/hub/`)
+
+All required models are cached. Do NOT attempt to download from compute nodes.
+
+| Model | Size | Purpose |
+|-------|------|---------|
+| `CohereForAI/aya-expanse-8b` | 15 GB | Base model (32 layers) |
+| `CohereForAI/aya-expanse-32b` | 61 GB | KD teacher (gated — license accepted) |
+| `Unbabel/wmt22-comet-da` | 2.2 GB | COMET evaluation |
+| `xlm-roberta-large` | 2.2 GB | Required internally by COMET |
+| `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | 458 MB | Semantic filtering |
+
+To pre-download a new model on the login node:
+```bash
+python -c "from huggingface_hub import snapshot_download; snapshot_download('model-name')"
+```
+
 ## Running Tests
 
 **Unit tests (CPU, login node — no GPU needed):**
@@ -33,6 +50,8 @@ srun --partition=m13h --qos=gpu --account=sdrich --gres=gpu:h200:1 --mem=64G --t
 ```
 
 Validates model loading, IFR hooks on real Aya 8B, and layer pruning with generation. Requires pre-downloaded model.
+
+**IMPORTANT: Testing policy.** Every time new code is added or existing code is modified, corresponding tests MUST be added or updated in `tests/`. Run `python -m pytest tests/ -v` on the login node before committing. All tests must pass. Tests must work on CPU without GPU or model downloads — use mock objects from `tests/conftest.py`.
 
 ## Key Architecture Decisions
 
