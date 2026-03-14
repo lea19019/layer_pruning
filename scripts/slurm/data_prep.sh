@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=data_prep
-#SBATCH --partition=cs
-#SBATCH --qos=cs
+#SBATCH --partition=m13h
+#SBATCH --qos=gpu
 #SBATCH --account=sdrich
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:h200:1
 #SBATCH --time=02:00:00
 #SBATCH --output=logs/data_prep_%j.out
 #SBATCH --error=logs/data_prep_%j.err
@@ -21,6 +21,7 @@ mkdir -p logs
 source .venv/bin/activate
 export HF_HUB_OFFLINE=1
 
+# Download already done on login node; this is a no-op if files exist
 echo "=== Step 1: Download corpus ==="
 python -m src.data_prep.download
 

@@ -29,6 +29,7 @@ def translate_batch(
     model.eval()
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"  # Left-pad for correct generation
 
     all_translations = []
 
@@ -54,10 +55,13 @@ def translate_batch(
         with torch.no_grad():
             outputs = model.generate(**inputs, **gen_kwargs)
 
-        # Decode only the generated tokens (not the prompt)
-        prompt_lengths = inputs["input_ids"].shape[1]
-        for output in outputs:
-            generated = output[prompt_lengths:]
+        # Decode only the generated part for each sequence individually.
+        # Each sequence in the batch may have a different prompt length
+        # due to left-padding, so we track per-sequence input length.
+        for j, output in enumerate(outputs):
+            # The input length for this specific sequence (including padding)
+            input_len = inputs["input_ids"].shape[1]
+            generated = output[input_len:]
             text = tokenizer.decode(generated, skip_special_tokens=True).strip()
             all_translations.append(text)
 

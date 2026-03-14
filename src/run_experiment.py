@@ -144,8 +144,7 @@ def run_experiment(config_path: Path):
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     eval_kwargs = {"dtype": torch.float16, "device_map": "auto"}
-    if do_quant and not do_ft:
-        # If only quantization (no separate quant step after FT), load with BnB
+    if do_quant:
         from transformers import BitsAndBytesConfig
         eval_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -157,7 +156,10 @@ def run_experiment(config_path: Path):
     model = AutoModelForCausalLM.from_pretrained(model_path, **eval_kwargs)
 
     hypotheses = translate_batch(model, tokenizer, prompts)
-    metrics = evaluate_all(hypotheses, references, sources)
+    metrics = evaluate_all(
+        hypotheses, references, sources,
+        model=model, tokenizer=tokenizer, prompts=prompts,
+    )
 
     # Save final results
     result = {
@@ -169,6 +171,13 @@ def run_experiment(config_path: Path):
         "n_test": len(sources),
         "num_layers": model.config.num_hidden_layers,
     }
+
+    # Save sample translations for inspection
+    result["sample_translations"] = [
+        {"source": s, "reference": r, "hypothesis": h}
+        for s, r, h in zip(sources[:10], references[:10], hypotheses[:10])
+    ]
+
     with open(exp_dir / "results.json", "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
