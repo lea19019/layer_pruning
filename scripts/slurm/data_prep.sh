@@ -9,19 +9,15 @@
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:h200:1
 #SBATCH --time=02:00:00
+#SBATCH --chdir=/home/vacl2/attention_lp
 #SBATCH --output=logs/data_prep_%j.out
 #SBATCH --error=logs/data_prep_%j.err
 
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "${PROJECT_DIR}"
-mkdir -p logs
-
 source .venv/bin/activate
 export HF_HUB_OFFLINE=1
 
-# Download already done on login node; this is a no-op if files exist
 echo "=== Step 1: Download corpus ==="
 python -m src.data_prep.download
 

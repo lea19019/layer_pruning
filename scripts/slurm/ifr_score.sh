@@ -1,22 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=ifr_score
-#SBATCH --partition=cs
-#SBATCH --qos=cs
+#SBATCH --partition=m13h
+#SBATCH --qos=gpu
 #SBATCH --account=sdrich
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:h200:1
 #SBATCH --time=06:00:00
+#SBATCH --chdir=/home/vacl2/attention_lp
 #SBATCH --output=logs/ifr_score_%j.out
 #SBATCH --error=logs/ifr_score_%j.err
 
 set -euo pipefail
-
-PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "${PROJECT_DIR}"
-mkdir -p logs
 
 source .venv/bin/activate
 export HF_HUB_OFFLINE=1

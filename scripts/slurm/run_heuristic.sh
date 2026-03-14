@@ -1,14 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=heuristic
-#SBATCH --partition=cs
-#SBATCH --qos=cs
+#SBATCH --partition=m13h
+#SBATCH --qos=gpu
 #SBATCH --account=sdrich
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --gres=gpu:a100:2
+#SBATCH --gres=gpu:h200:2
 #SBATCH --time=3-00:00:00
+#SBATCH --chdir=/home/vacl2/attention_lp
 #SBATCH --output=logs/heuristic_%j.out
 #SBATCH --error=logs/heuristic_%j.err
 
@@ -27,10 +28,6 @@ if [ $# -lt 1 ]; then
 fi
 
 CONFIG="$1"
-
-PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "${PROJECT_DIR}"
-mkdir -p logs
 
 source .venv/bin/activate
 export HF_HUB_OFFLINE=1
