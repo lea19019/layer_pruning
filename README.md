@@ -1,103 +1,176 @@
 # Interpretability-Guided Layer Pruning for Multilingual Machine Translation
 
+## Quick Start
+
+```bash
+# 1. Setup (already done if you cloned and ran setup)
+uv venv --python 3.11 && uv sync
+
+# 2. Pre-download models on login node (compute nodes have no internet)
+source .venv/bin/activate
+python -c "from huggingface_hub import snapshot_download; snapshot_download('CohereForAI/aya-expanse-8b')"
+python -c "from comet import download_model; download_model('Unbabel/wmt22-comet-da')"
+
+# 3. Run data preparation
+sbatch scripts/slurm/data_prep.sh
+
+# 4. Run IFR scoring (after data prep completes)
+sbatch scripts/slurm/ifr_score.sh
+
+# 5. Run a single experiment
+sbatch scripts/slurm/run_experiment.sh experiments/configs/I1_8.yaml
+
+# 6. Or submit everything with dependency chains
+bash scripts/submit_all.sh
+
+# 7. Aggregate results
+python -m src.evaluation.aggregate_results
+```
+
+## Data Pipeline Status
+
+News Commentary v18 CES-DEU filtering results:
+
+| Step | Pairs | Removed |
+|------|------:|--------:|
+| Raw | 243,807 | — |
+| Deduplication | 241,831 | 1,976 |
+| Length filter (max 200w, ratio ≤ 1.5) | 225,680 | 16,151 |
+| Language detection (fastText ≥ 0.9) | 214,532 | 11,148 |
+| Semantic similarity (MiniLM ≥ 0.7) | 208,812 | 5,720 |
+| **Train split** | **100,000** | — |
+| **Test split** | **500** | — |
+
+---
+
 ## Project Overview
 
 This project investigates whether interpretability techniques can identify which layers
 of a multilingual LLM contribute least to translation quality, enabling more principled
 layer pruning decisions than existing heuristic approaches.
 
-The central research question is: **can interpretability-guided layer pruning combined
-with quantization achieve translation quality comparable to quantization alone, while
-producing a smaller model?**
+**Research question:** Can interpretability-guided layer pruning combined with
+quantization achieve translation quality comparable to quantization alone, while
+producing a smaller model?
 
-The model under study is **Aya Expanse 8B** (Dang et al., 2024) — a multilingual LLM
-with 32 transformer layers. The target language pair is **Czech → German (CES-DEU)**.
-Translation quality is measured using **COMET** (primary) and **chrF++** (secondary).
-
----
-
-## Background and Motivation
-
-The WMT 2025 Model Compression shared task (Gaido et al., 2025) showed that:
-- **Quantization alone** (e.g., INT4 via BitsAndBytes) reduces model size by up to 65%
-  while nearly preserving baseline COMET scores (~55).
-- **Heuristic layer pruning** (Moslem et al., 2025) iteratively removes the layer with
-  the lowest impact on chrF++ at each step, then fine-tunes the pruned model. This
-  achieved COMET ~39.9 in the shared task for Czech→German (down from 55.3 baseline),
-  though the standalone paper reported stronger results — a discrepancy we aim to
-  investigate by replicating the work.
-- Combining heuristic pruning + quantization degraded quality further rather than helping.
-
-Our hypothesis is that **interpretability-guided pruning** — using attribution scores to
-identify unimportant layers rather than running expensive iterative quality evaluations —
-will produce better pruning decisions and better final quality when combined with
-quantization.
+- **Model:** Aya Expanse 8B (32 layers, Cohere architecture)
+- **Language pair:** Czech → German
+- **Primary metric:** COMET (wmt22-comet-da)
+- **Secondary metrics:** chrF++, BLEU, model size, inference speed
 
 ---
 
-## Interpretability Methods
+## Repository Structure
 
-### Primary: Information Flow Routes (IFR)
-Paper: Ferrando & Voita, EMNLP 2024
-https://aclanthology.org/2024.emnlp-main.965.pdf
-
-IFR builds an attribution graph over the transformer's residual stream. For a set of
-reference translation examples, it traces how information flows from input tokens to
-the final prediction, computing an importance score for each attention head and FFN
-layer based on their contribution to the output. A single forward pass is sufficient
-(~100x faster than activation patching). Layers with consistently low importance
-scores across the reference set are candidates for pruning.
-
-**How we use it:** Run IFR on a sample of Czech→German translation pairs from News
-Commentary. Aggregate per-layer importance scores across examples. Use this ranking
-to decide which layers to remove — either targeting fixed counts (8, 12, 16 layers)
-or using a threshold-based approach to let the attribution scores determine how many
-layers to prune.
-
-### Secondary (time permitting): LRP Attribution Pruning
-Paper: Vakilzadeh Hatefi et al., 2025
-https://arxiv.org/pdf/2506.13727
-
-Layer-wise Relevance Propagation (LRP) assigns relevance scores to model components
-via a single forward-backward pass. When run on general-purpose or task-specific
-reference samples, it identifies which layers contribute least to predictions. Unlike
-IFR which operates at the information flow / circuit level, LRP operates at the
-parameter level (individual weights), making it suitable for both structured layer
-pruning and unstructured weight pruning.
-
-**How we use it:** Run LRP on the same Czech→German reference samples. Aggregate
-layer-level relevance scores. Use these scores to rank and remove layers, following
-the same pruning targets as IFR for direct comparison.
+```
+├── data/
+│   ├── raw/                    # News Commentary v18 download + fastText LID model
+│   ├── filtered/               # Filtered + split: train.{cs,de}, test.{cs,de}
+│   └── kd/                     # Synthetic KD data from Aya-32B teacher
+├── src/
+│   ├── config.py               # Central constants (model names, thresholds, paths)
+│   ├── utils.py                # Seed, env loading, device helpers
+│   ├── run_experiment.py       # Master runner: reads YAML config, runs full pipeline
+│   ├── data_prep/
+│   │   ├── download.py         # Download News Commentary v18 cs-de
+│   │   ├── filter.py           # Dedup, length, langid (fastText), semantic (MiniLM)
+│   │   └── split.py            # Train/test split
+│   ├── attribution/
+│   │   ├── ifr.py              # IFR implementation using HF hooks on residual stream
+│   │   └── score_layers.py     # CLI: score all layers, save ranking to JSON
+│   ├── pruning/
+│   │   ├── remove_layers.py    # Physical layer removal + re-indexing
+│   │   ├── heuristic.py        # Moslem iterative pruning (remove least-impactful layer)
+│   │   └── guided.py           # IFR-guided: fixed-count or threshold-based selection
+│   ├── finetuning/
+│   │   └── train.py            # LoRA/QLoRA fine-tuning via PEFT + TRL
+│   ├── distillation/
+│   │   ├── generate_kd.py      # Generate translations with Aya-32B, filter by COMET
+│   │   └── train_kd.py         # Fine-tune on merged authentic + KD data
+│   ├── quantization/
+│   │   └── quantize.py         # BitsAndBytes INT4 (NF4) quantization
+│   └── evaluation/
+│       ├── translate.py        # Batch translation (HF generate or vLLM)
+│       ├── metrics.py          # COMET, chrF++, BLEU, model size, inference speed
+│       ├── run_eval.py         # CLI: evaluate a model on test set
+│       └── aggregate_results.py # Collect all experiment results into CSV table
+├── experiments/
+│   ├── configs/                # 39 YAML configs (B0-B1, M1-M4, I1-I5, L1-L4)
+│   └── results/                # Per-experiment output dirs with results.json
+├── scripts/
+│   ├── setup_cluster.sh        # Create dirs, install deps
+│   ├── generate_configs.py     # Generate all 39 experiment YAML configs
+│   ├── smoke_test.py           # Validate model loading, IFR hooks, pruning
+│   ├── submit_all.sh           # Submit all jobs with SLURM dependency chains
+│   └── slurm/                  # Individual SLURM job scripts
+│       ├── data_prep.sh
+│       ├── ifr_score.sh
+│       ├── generate_kd.sh
+│       ├── run_experiment.sh
+│       └── run_heuristic.sh
+├── paper/                      # LaTeX source for the paper
+├── notebooks/                  # Exploratory analysis
+└── pyproject.toml              # UV/pip dependencies
+```
 
 ---
 
-## Datasets
+## How It Works
 
-### Training / Fine-tuning
-- **News Commentary v18** (CES-DEU): ~250K parallel segments before filtering.
-  After filtering expect ~200K usable segments.
-  Following Moslem et al.: deduplicate, max 200 words per segment, length ratio ≤ 1.5x,
-  language detection via fastText (threshold 0.9), semantic filtering via mUSE
-  (threshold 0.7 cosine similarity).
-  Use 100K training segments + 500 held-out test segments.
+### 1. IFR Attribution (`src/attribution/ifr.py`)
 
-### Knowledge Distillation Data
-- Generate synthetic CES-DEU translations using **Aya Expanse 32B** as teacher model.
-  Filter synthetic pairs by COMET ≥ 70% before mixing with authentic data.
-  Following Moslem et al. for consistency.
+Custom implementation of Information Flow Routes (Ferrando & Voita, EMNLP 2024).
+Uses HuggingFace `register_forward_hook()` to capture residual stream states at each
+layer, then computes proximity-based L1 contribution scores:
 
-### Evaluation
-- **In-domain:** 500-segment holdout from News Commentary (same split as Moslem).
-- **External:** WMT 2025 shared task test set for CES-DEU if available, for
-  cross-study comparison.
+```
+proximity(component, total) = max(-||total - component||_1 + ||total||_1, 0)
+```
+
+For each layer, we measure how much the attention output and FFN output contribute to
+the residual stream progression. Summing both gives a per-layer importance score.
+Layers with low scores across many translation examples are pruning candidates.
+
+### 2. Layer Pruning (`src/pruning/`)
+
+Two approaches:
+
+- **Heuristic (Moslem replication):** For each remaining layer, temporarily remove it,
+  translate 50 validation sentences, measure chrF++. Remove the layer whose absence
+  causes the smallest quality drop. Repeat. Very expensive: O(n^2) evaluations.
+
+- **IFR-guided:** Run IFR once on 200 examples, rank layers by importance, remove the
+  N least important. O(n) cost — single forward pass per example.
+
+After removing layers, `self_attn.layer_idx` must be re-indexed so the KV cache
+doesn't throw IndexError.
+
+### 3. Fine-tuning (`src/finetuning/train.py`)
+
+LoRA fine-tuning targeting all linear layers (q/k/v/o_proj, gate/up/down_proj).
+r=16, alpha=32. 3 epochs, cosine schedule. Merges LoRA weights after training.
+QLoRA variant loads model in 4-bit for memory efficiency.
+
+### 4. Knowledge Distillation (`src/distillation/`)
+
+Generates synthetic translations using Aya Expanse 32B as teacher (via vLLM with
+tensor parallelism). Filters by COMET ≥ 0.7, then merges with authentic training data.
+
+### 5. Evaluation (`src/evaluation/`)
+
+- **COMET** (wmt22-comet-da): primary quality metric
+- **chrF++**: character n-gram F-score, used for pruning decisions
+- **BLEU**: for cross-study comparison
+- **Model size**: parameter count + disk size in MB
+- **Inference speed**: tokens/second (warmup + timed generation)
+
+Results aggregated via `python -m src.evaluation.aggregate_results` into a comparison CSV.
 
 ---
 
 ## Experimental Matrix
 
-All experiments use Aya Expanse 8B (32 layers, ~16GB in FP16) as the base model.
-Pruning targets: **8 layers removed (→24)**, **12 layers removed (→20)**,
-**16 layers removed (→16)**.
+39 experiments across 4 groups. Each experiment is a YAML config in `experiments/configs/`.
 
 ### Group 1: Baselines
 | ID | Description | Pruning | FT | KD | Quant |
@@ -106,96 +179,68 @@ Pruning targets: **8 layers removed (→24)**, **12 layers removed (→20)**,
 | B1 | Quantization only | None | No | No | INT4 |
 
 ### Group 2: Moslem Replication (Heuristic Pruning)
-Pruning method: iterative — remove the layer whose absence causes the smallest chrF++
-drop on a small validation set. Repeat until target layer count is reached.
-
 | ID | Pruning | FT | KD | Quant |
 |----|---------|----|----|-------|
 | M1 | Heuristic (8/12/16) | Yes | No | No |
 | M2 | Heuristic (8/12/16) | Yes | Yes | No |
-| M3 | Heuristic (8/12/16) | Yes | No | Yes (INT4) |
-| M4 | Heuristic (8/12/16) | Yes | Yes | Yes (INT4) |
+| M3 | Heuristic (8/12/16) | Yes | No | INT4 |
+| M4 | Heuristic (8/12/16) | Yes | Yes | INT4 |
 
-### Group 3: IFR-Guided Pruning (Primary)
-Pruning method: run IFR on reference CES-DEU samples, rank layers by aggregated
-importance score, remove the N least important layers.
-Also includes one threshold-based variant where N is determined by the scores
-themselves rather than a fixed target.
-
+### Group 3: IFR-Guided Pruning
 | ID | Pruning | FT | KD | Quant |
 |----|---------|----|----|-------|
 | I1 | IFR (8/12/16) | Yes | No | No |
 | I2 | IFR (8/12/16) | Yes | Yes | No |
-| I3 | IFR (8/12/16) | Yes | No | Yes (INT4) |
-| I4 | IFR (8/12/16) | Yes | Yes | Yes (INT4) |
-| I5 | IFR (threshold-based) | Yes | No | Yes (INT4) |
+| I3 | IFR (8/12/16) | Yes | No | INT4 |
+| I4 | IFR (8/12/16) | Yes | Yes | INT4 |
+| I5 | IFR (threshold) | Yes | No | INT4 |
 
-### Group 4: LRP-Guided Pruning (Secondary / Time Permitting)
+### Group 4: LRP-Guided Pruning (time permitting)
 | ID | Pruning | FT | KD | Quant |
 |----|---------|----|----|-------|
 | L1 | LRP (8/12/16) | Yes | No | No |
 | L2 | LRP (8/12/16) | Yes | Yes | No |
-| L3 | LRP (8/12/16) | Yes | No | Yes (INT4) |
-| L4 | LRP (8/12/16) | Yes | Yes | Yes (INT4) |
+| L3 | LRP (8/12/16) | Yes | No | INT4 |
+| L4 | LRP (8/12/16) | Yes | Yes | INT4 |
+
+---
+
+## Cluster Notes (BYU RC)
+
+| Detail | Value |
+|--------|-------|
+| Account | `sdrich` |
+| Best GPU partition | `m13h` (H200, 150GB VRAM, `--qos=gpu`) |
+| Alternative | `cs` (A100 80GB, `--qos=cs`) — often busy |
+| Max walltime | 3 days (m13h), 7 days (cs) |
+| Compute internet | **None** — pre-download everything on login node |
+| Storage | Home dir: 2TB |
+| HF cache | `~/.cache/huggingface/hub/` |
+
+All SLURM scripts set `HF_HUB_OFFLINE=1` and use `#SBATCH --chdir=/home/vacl2/attention_lp`.
+
+### Running individual experiments
+
+```bash
+# IFR-guided, 8 layers removed, with fine-tuning
+sbatch scripts/slurm/run_experiment.sh experiments/configs/I1_8.yaml
+
+# Heuristic pruning (use dedicated script — needs more time + 2 GPUs)
+sbatch scripts/slurm/run_heuristic.sh experiments/configs/M1_8.yaml
+
+# Interactive GPU session for debugging
+srun --partition=m13h --qos=gpu --account=sdrich --gres=gpu:h200:1 --mem=64G --time=00:30:00 bash
+```
 
 ---
 
 ## Key Research Questions
 
-1. Does the Moslem et al. standalone paper replicate? Or do results align more
-   with the weaker numbers reported in the WMT 2025 shared task evaluation?
-2. Does IFR-guided pruning produce better translation quality than heuristic pruning
-   at the same compression level?
-3. Can IFR + quantization match or exceed quantization-alone (B1) while being smaller?
+1. Does Moslem et al. replicate? Or do results match the weaker WMT 2025 shared task numbers?
+2. Does IFR-guided pruning produce better quality than heuristic pruning at the same compression?
+3. Can IFR + quantization match quantization-alone (B1) while being smaller?
 4. Does fine-tuning + KD + quantization compound positively or negatively?
-5. Does a threshold-based pruning approach (I5) find a better compression point than
-   fixed layer counts?
-
----
-
-## Evaluation Metrics
-
-- **COMET** (wmt22-comet-da): primary metric, neural MT quality estimation.
-- **chrF++**: character-level F-score, used during iterative pruning decisions in the
-  Moslem approach.
-- **BLEU**: reported for completeness / cross-study comparison.
-- **Model size**: number of parameters and disk size (GB) after pruning and/or
-  quantization.
-- **Inference speed**: tokens/second, measured with vLLM.
-
----
-
-## Infrastructure
-
-- **Base model:** `CohereForAI/aya-expanse-8b` from HuggingFace
-- **Teacher model (KD):** `CohereForAI/aya-expanse-32b`
-- **Hardware target:** NVIDIA A100 80GB (training), A40 48GB acceptable for inference
-- **Frameworks:** HuggingFace Transformers, vLLM, BitsAndBytes (quantization)
-- **IFR implementation:** see Ferrando & Voita's codebase / ALTI attribution method
-- **LRP implementation:** https://github.com/erfanhatefi/SparC3
-
----
-
-## Repository Structure (intended)
-```
-├── data/
-│   ├── raw/              # Raw News Commentary downloads
-│   ├── filtered/         # After filtering pipeline
-│   └── kd/               # Synthetic KD data from Aya-32B teacher
-├── src/
-│   ├── data_prep/        # Filtering, splitting, KD data generation
-│   ├── attribution/      # IFR and LRP layer importance scoring
-│   ├── pruning/          # Layer removal logic (heuristic + guided)
-│   ├── finetuning/       # Fine-tuning scripts
-│   ├── distillation/     # Knowledge distillation training
-│   ├── quantization/     # BitsAndBytes INT4 quantization
-│   └── evaluation/       # COMET, chrF++, BLEU scoring
-├── experiments/
-│   ├── configs/          # Config files per experiment ID (B0, M1, I1, etc.)
-│   └── results/          # Output tables and logs
-├── notebooks/            # Exploratory analysis, attribution visualization
-└── README.md
-```
+5. Does threshold-based pruning (I5) find a better compression point than fixed targets?
 
 ---
 
