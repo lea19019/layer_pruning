@@ -29,7 +29,11 @@ def translate_batch(
     model.eval()
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "left"  # Left-pad for correct generation
+    # Left-padding is required for causal LMs: right-padding would place
+    # pad tokens between the real prompt tokens and the generated tokens,
+    # breaking autoregressive generation. Left-padding keeps all real tokens
+    # contiguous at the right edge where generation begins.
+    tokenizer.padding_side = "left"
 
     all_translations = []
 
@@ -55,11 +59,11 @@ def translate_batch(
         with torch.no_grad():
             outputs = model.generate(**inputs, **gen_kwargs)
 
-        # Decode only the generated part for each sequence individually.
-        # Each sequence in the batch may have a different prompt length
-        # due to left-padding, so we track per-sequence input length.
+        # Strip the prompt from each output to get only the generated text.
+        # Because we used left-padding, all sequences in the batch share the
+        # same padded input length (shape[1]), so we can use a single offset
+        # to slice off the prompt portion from every output sequence.
         for j, output in enumerate(outputs):
-            # The input length for this specific sequence (including padding)
             input_len = inputs["input_ids"].shape[1]
             generated = output[input_len:]
             text = tokenizer.decode(generated, skip_special_tokens=True).strip()

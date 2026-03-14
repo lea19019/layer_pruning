@@ -37,10 +37,14 @@ def proximity(component: torch.Tensor, total: torch.Tensor) -> torch.Tensor:
     Returns:
         Scalar proximity score (averaged over positions and batch).
     """
-    # max(-||total - component||_1 + ||total||_1, 0)
+    # Intuition: if removing `component` from `total` increases the L1 norm,
+    # then `component` is "aligned" with the sum and contributes positively.
+    # The clamp ensures we ignore components that point away from the sum.
     residual_norm = torch.norm(total - component, p=1, dim=-1)
     total_norm = torch.norm(total, p=1, dim=-1)
     prox = torch.clamp(-residual_norm + total_norm, min=0.0)
+    # Average over sequence positions and batch to get a single scalar per layer.
+    # This treats all token positions as equally important for layer ranking.
     return prox.mean()
 
 
@@ -92,9 +96,15 @@ class IFRScorer:
         self._clear_hooks()
         self._activations = {}
 
+        # Cohere/Aya uses model.model.layers (not model.layers) as the
+        # transformer block container — standard HF CausalLM wrapping.
         layers = self.model.model.layers
 
         for i, layer in enumerate(layers):
+            # Each hook factory (`make_*_hook`) creates a closure that captures
+            # `layer_idx` by value. Without the factory, Python's late-binding
+            # closures would make every hook reference the final loop value of `i`.
+
             # Capture layer input (residual stream entering this layer)
             def make_layer_input_hook(layer_idx):
                 def hook(module, args, kwargs):
@@ -104,6 +114,8 @@ class IFRScorer:
                         self._activations[f"layer_{layer_idx}_input"] = hidden.detach()
                 return hook
 
+            # with_kwargs=True is required because Cohere layers pass
+            # hidden_states as a keyword argument in some code paths.
             h = layer.register_forward_pre_hook(make_layer_input_hook(i), with_kwargs=True)
             self._hooks.append(h)
 
@@ -163,6 +175,11 @@ class IFRScorer:
         mlp_scores = torch.zeros(num_layers)
 
         for i in range(num_layers):
+            # Reconstruct the residual stream decomposition at layer i:
+            #   input  = residual stream before this layer
+            #   attn   = attention sub-layer output (delta, not residual)
+            #   mlp    = FFN sub-layer output (delta, not residual)
+            #   output = residual stream after this layer
             layer_input = self._activations.get(f"layer_{i}_input")
             attn_out = self._activations.get(f"layer_{i}_attn_out")
             mlp_out = self._activations.get(f"layer_{i}_mlp_out")
@@ -171,7 +188,8 @@ class IFRScorer:
             if any(x is None for x in [layer_input, attn_out, mlp_out, layer_output]):
                 continue
 
-            # Cast to float32 for numerical stability
+            # Cast to float32: the model runs in fp16 for speed, but L1 norm
+            # differences are prone to catastrophic cancellation in half precision.
             layer_input = layer_input.float()
             attn_out = attn_out.float()
             mlp_out = mlp_out.float()
@@ -180,13 +198,14 @@ class IFRScorer:
             # Post-attention residual: x^{l,A} = x^{l-1} + attn_out
             post_attn = layer_input + attn_out
 
-            # Contribution of attention to post-attention state
+            # Normalize proximity scores so attn + residual contributions sum to 1.
+            # The epsilon avoids division by zero when both components are orthogonal to the sum.
             attn_prox = proximity(attn_out, post_attn)
             residual_prox = proximity(layer_input, post_attn)
             total_prox = attn_prox + residual_prox + 1e-10
             attn_scores[i] = (attn_prox / total_prox).cpu()
 
-            # Contribution of MLP to final layer output: x^l = x^{l,A} + mlp_out
+            # Same decomposition for the FFN sub-layer: x^l = x^{l,A} + mlp_out
             mlp_prox = proximity(mlp_out, layer_output)
             residual_prox2 = proximity(post_attn, layer_output)
             total_prox2 = mlp_prox + residual_prox2 + 1e-10
@@ -194,6 +213,8 @@ class IFRScorer:
 
         self._clear_hooks()
 
+        # Summing attn + mlp gives total layer contribution: a layer that does
+        # little in both sub-layers is a good pruning candidate.
         layer_scores = attn_scores + mlp_scores
 
         return {
@@ -231,6 +252,8 @@ class IFRScorer:
             all_mlp.append(scores["mlp_importance"])
             all_layer.append(scores["layer_importance"])
 
+        # Average across all inputs so that the ranking reflects general
+        # layer importance rather than being dominated by a single example.
         return {
             "attn_importance": torch.stack(all_attn).mean(dim=0),
             "mlp_importance": torch.stack(all_mlp).mean(dim=0),

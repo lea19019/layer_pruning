@@ -26,6 +26,8 @@ def remove_layers(
     Returns:
         The modified model with layers removed and config updated.
     """
+    # Delete in reverse order so that removing a high-index layer doesn't
+    # shift lower-index layers and invalidate the remaining indices.
     layers_to_remove = sorted(layers_to_remove, reverse=True)
     layer_list = model.model.layers
 
@@ -35,12 +37,13 @@ def remove_layers(
             raise ValueError(f"Layer index {idx} out of range [0, {len(layer_list)})")
         del layer_list[idx]
 
-    # Update config
     model.config.num_hidden_layers = len(layer_list)
 
     # Re-index remaining layers so self_attn.layer_idx matches position.
-    # Without this, the KV cache (which is sized by num_hidden_layers)
-    # gets an out-of-range index from layers that kept their old index.
+    # This is critical: HF's KV cache is allocated as a list of length
+    # num_hidden_layers, indexed by layer_idx. A stale layer_idx (e.g. 39
+    # in a now-35-layer model) causes an index-out-of-range crash during
+    # generation.
     for new_idx, layer in enumerate(layer_list):
         layer.self_attn.layer_idx = new_idx
 

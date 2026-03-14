@@ -16,7 +16,12 @@ from src.utils import ensure_dir, load_env, set_seed
 
 
 def run_experiment(config_path: Path):
-    """Run a single experiment defined by a YAML config file."""
+    """Run a single experiment defined by a YAML config file.
+
+    Pipeline: prune -> finetune (optionally with KD) -> quantize -> evaluate.
+    Each stage is optional; `model_path` is threaded through so each stage
+    picks up the output of the previous one.
+    """
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
 
@@ -145,6 +150,9 @@ def run_experiment(config_path: Path):
 
     eval_kwargs = {"dtype": torch.float16, "device_map": "auto"}
     if do_quant:
+        # When quantization was applied, the saved model is already quantized
+        # on disk. We re-apply BitsAndBytes config at load time so HF loads
+        # the 4-bit weights correctly instead of treating them as full precision.
         from transformers import BitsAndBytesConfig
         eval_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,

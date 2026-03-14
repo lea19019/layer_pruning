@@ -100,7 +100,9 @@ def filter_language(
 
     result = []
     for src, tgt in tqdm(pairs, desc="Language detection"):
-        # fasttext returns (('__label__xx',), array([score]))
+        # fastText predict() returns (('__label__xx',), array([confidence])).
+        # The "__label__" prefix is fastText's convention for supervised labels;
+        # we strip it to get the ISO 639-1 language code (e.g. "cs", "de").
         src_pred = model.predict(src.replace("\n", " "))
         tgt_pred = model.predict(tgt.replace("\n", " "))
 
@@ -137,7 +139,7 @@ def filter_semantic_similarity(
     print("Encoding target sentences ...")
     tgt_embs = model.encode(targets, batch_size=batch_size, show_progress_bar=True, normalize_embeddings=True)
 
-    # Cosine similarity (already normalized)
+    # Dot product equals cosine similarity since embeddings are L2-normalized.
     similarities = np.sum(src_embs * tgt_embs, axis=1)
 
     result = [
@@ -153,6 +155,10 @@ def run_full_pipeline(tsv_path: Path | None = None, skip_semantic: bool = False)
     if tsv_path is None:
         tsv_path = RAW_DIR / "news-commentary-v18.cs-de.tsv"
 
+    # Filters are ordered cheapest-first: dedup and length checks are O(n)
+    # string ops, language detection loads a small fastText model, and
+    # semantic similarity requires GPU-based sentence-transformer encoding.
+    # Each stage reduces the dataset so later expensive stages process fewer pairs.
     pairs = load_raw_pairs(tsv_path)
     pairs = dedup(pairs)
     pairs = filter_length(pairs)

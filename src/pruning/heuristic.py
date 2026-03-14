@@ -35,16 +35,18 @@ def evaluate_without_layer(
     Creates a shallow copy of the layer list, removes the target layer,
     evaluates, then restores the original. This avoids full model copies.
     """
-    # Save original layers
+    # Save references to original layers instead of deepcopy — the full model
+    # is multi-GB, so copying it for each trial would be prohibitively expensive.
     original_layers = list(model.model.layers)
     original_num = model.config.num_hidden_layers
 
-    # Temporarily remove the layer
+    # Swap in a new ModuleList minus the target layer. The layer objects
+    # themselves are not copied; only the container changes.
     new_layers = [l for i, l in enumerate(original_layers) if i != layer_idx]
     model.model.layers = torch.nn.ModuleList(new_layers)
     model.config.num_hidden_layers = len(new_layers)
 
-    # Re-index so KV cache doesn't get out-of-range layer_idx
+    # Must re-index for the temporary config so KV cache allocation matches.
     for new_idx, layer in enumerate(new_layers):
         layer.self_attn.layer_idx = new_idx
 
@@ -60,7 +62,9 @@ def evaluate_without_layer(
         hypotheses = translate_batch(model, tokenizer, prompts, max_new_tokens=max_new_tokens)
         score = compute_chrf(hypotheses, references)
     finally:
-        # Restore original layers and their indices
+        # Restore original layers and reset layer_idx values to their original
+        # positions. Without this, the re-indexed values from the trial would
+        # corrupt subsequent trials and the final model state.
         model.model.layers = torch.nn.ModuleList(original_layers)
         model.config.num_hidden_layers = original_num
         for orig_idx, layer in enumerate(original_layers):
@@ -95,6 +99,9 @@ def iterative_prune(
     removed = []
     log = []
 
+    # Greedy search: at each step we try removing every remaining layer (O(n)
+    # evaluations) and keep the one that hurts least. Over k removal steps
+    # this is O(n*k) evaluations — expensive but produces good orderings.
     while model.config.num_hidden_layers > target_layers:
         n_layers = model.config.num_hidden_layers
         print(f"\n--- Pruning step: {n_layers} -> {n_layers - 1} layers ---")
