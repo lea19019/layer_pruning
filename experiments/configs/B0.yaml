@@ -1,0 +1,17 @@
+# B0: Baseline - Original model, no modifications
+experiment_id: B0
+description: "Baseline: Aya Expanse 8B, no pruning, no fine-tuning, no quantization"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+
+pruning:
+  method: none
+
+finetuning:
+  enabled: false
+
+distillation:
+  enabled: false
+
+quantization:
+  enabled: false

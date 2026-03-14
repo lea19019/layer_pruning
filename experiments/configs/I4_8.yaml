@@ -1,0 +1,17 @@
+experiment_id: I4_8
+description: IFR pruning (8 removed) + FT + KD + INT4
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+pruning:
+  method: ifr
+  n_remove: 8
+  scores_path: experiments/results/ifr_scores.json
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: true
+quantization:
+  enabled: true
+  quant_type: nf4

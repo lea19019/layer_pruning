@@ -1,0 +1,17 @@
+experiment_id: M4_8
+description: Heuristic pruning (8 removed) + FT + KD + INT4
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+pruning:
+  method: heuristic
+  target_layers: 24
+  val_size: 50
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: true
+quantization:
+  enabled: true
+  quant_type: nf4

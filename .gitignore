@@ -1,0 +1,41 @@
+# Data (large files live on /nobackup)
+data/raw/
+data/filtered/
+data/kd/
+
+# Model artifacts
+models/
+checkpoints/
+
+# Experiment outputs
+experiments/results/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# UV
+uv.lock
+
+# Environment
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+*.swp
+
+# SLURM logs
+slurm-*.out
+*.log

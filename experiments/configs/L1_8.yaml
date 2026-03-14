@@ -1,0 +1,15 @@
+experiment_id: L1_8
+description: LRP pruning (8 removed) + FT
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+pruning:
+  method: lrp
+  n_remove: 8
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: false
+quantization:
+  enabled: false

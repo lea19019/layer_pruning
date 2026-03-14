@@ -1,0 +1,16 @@
+experiment_id: M1_12
+description: Heuristic pruning (12 removed -> 20 layers) + fine-tuning
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+pruning:
+  method: heuristic
+  target_layers: 20
+  val_size: 50
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: false
+quantization:
+  enabled: false

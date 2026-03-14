@@ -1,0 +1,17 @@
+experiment_id: I5_threshold
+description: IFR threshold-based pruning + FT + INT4
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+pruning:
+  method: ifr
+  threshold_factor: 0.5
+  scores_path: experiments/results/ifr_scores.json
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: false
+quantization:
+  enabled: true
+  quant_type: nf4
