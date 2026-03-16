@@ -26,15 +26,17 @@ def remove_layers(
     Returns:
         The modified model with layers removed and config updated.
     """
-    # Delete in reverse order so that removing a high-index layer doesn't
-    # shift lower-index layers and invalidate the remaining indices.
-    layers_to_remove = sorted(layers_to_remove, reverse=True)
+    # Deduplicate and sort in reverse order so that removing a high-index
+    # layer doesn't shift lower-index layers and invalidate remaining indices.
+    layers_to_remove = sorted(set(layers_to_remove), reverse=True)
     layer_list = model.model.layers
 
     original_count = len(layer_list)
+    # Validate all indices against the original layer count before any deletion.
     for idx in layers_to_remove:
-        if idx < 0 or idx >= len(layer_list):
-            raise ValueError(f"Layer index {idx} out of range [0, {len(layer_list)})")
+        if idx < 0 or idx >= original_count:
+            raise ValueError(f"Layer index {idx} out of range [0, {original_count})")
+    for idx in layers_to_remove:
         del layer_list[idx]
 
     model.config.num_hidden_layers = len(layer_list)

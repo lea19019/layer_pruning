@@ -1,8 +1,41 @@
 """Translation generation using HuggingFace or vLLM."""
 
+import re
+
 import torch
 from tqdm import tqdm
 from transformers import PreTrainedModel, PreTrainedTokenizer
+
+from src.config import SRC_LANG_NAME
+
+# Stop strings that signal the model has finished translating and is
+# starting to hallucinate additional content (e.g. new source/target pairs,
+# meta-commentary). Used both as generation stop strings and as a
+# post-processing safety net.
+STOP_STRINGS = [f"\n{SRC_LANG_NAME}:", "\nCzech:", "\n\n"]
+# Broader regex for post-processing: also catches "\nTranslation:",
+# "\n(Translation", "\nGerman:", and other common continuation patterns.
+_STOP_PATTERN = re.compile(
+    r"\nCzech:|"
+    r"\n" + re.escape(SRC_LANG_NAME) + r":|"
+    r"\nGerman:|"
+    r"\nTranslation[:\s(]|"
+    r"\n\(Translation|"
+    r"\n\n"
+)
+
+
+def _extract_translation(text: str) -> str:
+    """Extract the first translation from generated text.
+
+    The model sometimes continues generating after the translation (e.g.
+    additional language pairs, meta-commentary). This truncates at the
+    first stop pattern and strips whitespace.
+    """
+    m = _STOP_PATTERN.search(text)
+    if m:
+        text = text[: m.start()]
+    return text.strip()
 
 
 def translate_batch(
@@ -52,6 +85,8 @@ def translate_batch(
             max_new_tokens=max_new_tokens,
             do_sample=temperature > 0,
             pad_token_id=tokenizer.pad_token_id,
+            stop_strings=STOP_STRINGS,
+            tokenizer=tokenizer,
         )
         if temperature > 0:
             gen_kwargs["temperature"] = temperature
@@ -67,6 +102,7 @@ def translate_batch(
             input_len = inputs["input_ids"].shape[1]
             generated = output[input_len:]
             text = tokenizer.decode(generated, skip_special_tokens=True).strip()
+            text = _extract_translation(text)
             all_translations.append(text)
 
     return all_translations
@@ -102,8 +138,11 @@ def translate_with_vllm(
     params = SamplingParams(
         max_tokens=max_new_tokens,
         temperature=0.0,
+        stop=STOP_STRINGS,
     )
 
     outputs = llm.generate(prompts, params)
-    translations = [out.outputs[0].text.strip() for out in outputs]
+    translations = [
+        _extract_translation(out.outputs[0].text) for out in outputs
+    ]
     return translations
