@@ -17,6 +17,9 @@ set -euo pipefail
 
 source .venv/bin/activate
 export HF_HUB_OFFLINE=1
+# python3-devel is not installed on compute nodes; point to manually extracted headers
+# so vLLM's Triton backend can JIT-compile CUDA extensions.
+export C_INCLUDE_PATH=/home/vacl2/python3.11-headers2/usr/include/python3.11
 
 echo "=== Generating KD data with Aya 32B teacher ==="
 python -m src.distillation.generate_kd \

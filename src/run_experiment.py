@@ -48,11 +48,11 @@ def run_experiment(config_path: Path):
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         target_layers = pruning_cfg["target_layers"]
-        val_size = pruning_cfg.get("val_size", 50)
+        val_size = pruning_cfg.get("val_size", 200)
 
         tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModelForCausalLM.from_pretrained(
-            model_path, dtype=torch.float16, device_map="auto"
+            model_path, torch_dtype=torch.bfloat16, device_map="auto"
         )
 
         # Load validation data

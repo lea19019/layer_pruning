@@ -32,7 +32,7 @@ CONFIGS_DIR = PROJECT_DIR / "experiments" / "configs"
 RESULTS_DIR = PROJECT_DIR / "experiments" / "results"
 
 POLL_INTERVAL = 120          # seconds between squeue checks
-MAX_CONCURRENT_JOBS = 3      # be a good cluster citizen
+MAX_CONCURRENT_JOBS = 2      # keep queue small: submit new job only when a slot opens
 MAX_RETRIES = 3              # per experiment
 CLAUDE_MAX_TURNS = 30        # limit Claude's tool-use loops
 
@@ -339,6 +339,65 @@ def has_results(exp_id: str) -> bool:
     return (RESULTS_DIR / exp_id / "results.json").exists()
 
 
+def quick_validate_results(exp_id: str) -> tuple[bool, str]:
+    """Fast local sanity check on existing results (no Claude call).
+
+    Returns (is_valid, reason). Catches obviously bad results like
+    hallucinated translations, out-of-range metrics, or missing fields.
+    """
+    results_path = RESULTS_DIR / exp_id / "results.json"
+    if not results_path.exists():
+        return False, "results.json not found"
+
+    try:
+        with open(results_path) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        return False, f"Failed to read results: {e}"
+
+    metrics = data.get("metrics", {})
+
+    # Check required metrics exist
+    for key in ("comet", "chrf", "bleu"):
+        if key not in metrics:
+            return False, f"Missing metric: {key}"
+
+    comet = metrics["comet"]
+    chrf = metrics["chrf"]
+    bleu = metrics["bleu"]
+
+    # Range checks
+    if not (0.0 < comet < 1.0):
+        return False, f"COMET={comet} out of range (0, 1)"
+    if comet < 0.15:
+        return False, f"COMET={comet} suspiciously low — likely broken"
+    if not (0 < chrf < 100):
+        return False, f"chrF++={chrf} out of range"
+    if bleu < 1.0:
+        return False, f"BLEU={bleu} suspiciously low"
+
+    # Check sample translations for hallucination
+    samples = data.get("sample_translations", [])
+    if not samples:
+        return False, "No sample translations in results"
+
+    hallucination_count = 0
+    for s in samples:
+        hyp = s.get("hypothesis", "")
+        ref = s.get("reference", "")
+        # Hallucination markers
+        if "Czech:" in hyp or "\nGerman:" in hyp:
+            hallucination_count += 1
+        # Hypothesis 3x+ longer than reference suggests leakage
+        if ref and len(hyp) > len(ref) * 3:
+            hallucination_count += 1
+
+    if hallucination_count > len(samples) * 0.3:
+        return False, f"Hallucination detected in {hallucination_count}/{len(samples)} samples"
+
+    return True, f"OK (COMET={comet:.3f}, chrF++={chrf:.1f}, BLEU={bleu:.1f})"
+
+
 def discover_experiments() -> list[str]:
     """Get ordered list of all experiment IDs to run."""
     # Virtual jobs first, then configs in dependency order
@@ -359,14 +418,23 @@ def run_orchestrator():
     log.info(f"Poll interval: {POLL_INTERVAL}s")
     log.info("=" * 60)
 
-    # Check for already-completed experiments (e.g. from previous runs)
+    # Check for already-completed experiments (e.g. from previous runs).
+    # Don't blindly trust existing results — validate them first.
     for exp_id in all_experiments:
         if exp_id in VIRTUAL_JOBS:
             continue
         es = get_exp_state(state, exp_id)
         if es["status"] == "pending" and has_results(exp_id):
-            log.info(f"  {exp_id}: results already exist, marking completed")
-            es["status"] = "completed"
+            is_valid, reason = quick_validate_results(exp_id)
+            if is_valid:
+                log.info(f"  {exp_id}: existing results valid — {reason}")
+                es["status"] = "completed"
+                es["validated"] = True
+            else:
+                log.warning(f"  {exp_id}: existing results INVALID — {reason}. Will re-run.")
+                # Remove stale results so they don't confuse later checks
+                stale_path = RESULTS_DIR / exp_id / "results.json"
+                stale_path.unlink(missing_ok=True)
 
     # Check if data/ifr_scores/kd_data already exist
     if (PROJECT_DIR / "data" / "filtered" / "test.cs").exists():

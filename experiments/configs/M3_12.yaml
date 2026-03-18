@@ -5,7 +5,7 @@ seed: 42
 pruning:
   method: heuristic
   target_layers: 20
-  val_size: 50
+  val_size: 200
 finetuning:
   enabled: true
   epochs: 3

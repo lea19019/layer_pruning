@@ -135,9 +135,12 @@ Layers with low scores across many translation examples are pruning candidates.
 
 Two approaches:
 
-- **Heuristic (Moslem replication):** For each remaining layer, temporarily remove it,
-  translate 50 validation sentences, measure chrF++. Remove the layer whose absence
-  causes the smallest quality drop. Repeat. Very expensive: O(n^2) evaluations.
+- **Heuristic (Moslem replication):** Replicates the approach from Moslem et al.
+  (WMT 2025). For each remaining layer (excluding the first and last, which are
+  protected), temporarily remove it, translate 200 validation sentences using
+  `apply_chat_template` prompts, and measure chrF++. Remove the layer whose absence
+  causes the smallest quality drop. Repeat until the target layer count is reached.
+  Uses bfloat16 precision. O(n*k) evaluations where n=layers and k=layers to remove.
 
 - **IFR-guided:** Run IFR once on 200 examples, rank layers by importance, remove the
   N least important. O(n) cost — single forward pass per example.
@@ -153,8 +156,21 @@ QLoRA variant loads model in 4-bit for memory efficiency.
 
 ### 4. Knowledge Distillation (`src/distillation/`)
 
-Generates synthetic translations using Aya Expanse 32B as teacher (via vLLM with
-tensor parallelism). Filters by COMET ≥ 0.7, then merges with authentic training data.
+Generates synthetic translations using Aya Expanse 32B as teacher, then filters by
+COMET ≥ 0.7 and merges with authentic training data.
+
+**vLLM dependency:** The 32B teacher model is too large for a single GPU, so KD
+generation uses [vLLM](https://docs.vllm.ai/) — a high-throughput LLM inference engine
+that supports tensor parallelism across multiple GPUs. vLLM is used **only** for this
+step (`src/distillation/generate_kd.py`); all other translation (evaluation, heuristic
+pruning) uses standard HuggingFace `model.generate()`.
+
+> **BYU RC note:** vLLM's Triton backend JIT-compiles CUDA extensions at runtime,
+> which requires Python development headers (`Python.h`). Since `python3-devel` is not
+> installed on BYU RC compute nodes, the headers were extracted from the RPM into
+> `~/python3.11-headers2/`. The KD SLURM script sets
+> `C_INCLUDE_PATH=/home/vacl2/python3.11-headers2/usr/include/python3.11` to make this
+> work.
 
 ### 5. Evaluation (`src/evaluation/`)
 
@@ -225,7 +241,7 @@ All SLURM scripts set `HF_HUB_OFFLINE=1` and use `#SBATCH --chdir=/home/vacl2/at
 # IFR-guided, 8 layers removed, with fine-tuning
 sbatch scripts/slurm/run_experiment.sh experiments/configs/I1_8.yaml
 
-# Heuristic pruning (use dedicated script — needs more time + 2 GPUs)
+# Heuristic pruning (use dedicated script — longer runtime)
 sbatch scripts/slurm/run_heuristic.sh experiments/configs/M1_8.yaml
 
 # Interactive GPU session for debugging

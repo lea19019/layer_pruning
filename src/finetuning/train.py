@@ -10,9 +10,8 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    TrainingArguments,
 )
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
 from src.config import (
     BASE_MODEL,
@@ -129,7 +128,7 @@ def finetune(
         tokenizer.pad_token = tokenizer.eos_token
 
     # Training args
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=str(output_dir),
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
@@ -143,6 +142,7 @@ def finetune(
         lr_scheduler_type="cosine",
         report_to="none",
         remove_unused_columns=False,
+        max_length=max_seq_length,
     )
 
     # Trainer
@@ -150,8 +150,7 @@ def finetune(
         model=model,
         args=training_args,
         train_dataset=dataset,
-        tokenizer=tokenizer,
-        max_seq_length=max_seq_length,
+        processing_class=tokenizer,
     )
 
     trainer.train()

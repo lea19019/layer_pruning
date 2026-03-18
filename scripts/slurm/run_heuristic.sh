@@ -6,17 +6,17 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
-#SBATCH --gres=gpu:h200:2
-#SBATCH --time=3-00:00:00
+#SBATCH --mem=64G
+#SBATCH --gres=gpu:h200:1
+#SBATCH --time=12:00:00
 #SBATCH --chdir=/home/vacl2/attention_lp
 #SBATCH --output=logs/heuristic_%j.out
 #SBATCH --error=logs/heuristic_%j.err
 
-# Heuristic pruning is very expensive: for each pruning step, it evaluates
-# the model N times (once per remaining layer). With 32 layers and target 16,
+# Heuristic pruning (Moslem et al.): for each pruning step, evaluates the
+# model N times (once per remaining layer). With 32 layers and target 16,
 # this means (32+31+...+17) = ~392 evaluations. Each evaluation translates
-# 50 sentences. Hence the long walltime.
+# 200 sentences. On H200, pruning takes ~2-3h + ~3h fine-tuning.
 #
 # Usage: sbatch scripts/slurm/run_heuristic.sh experiments/configs/M1_8.yaml
 

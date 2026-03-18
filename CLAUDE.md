@@ -67,6 +67,10 @@ Validates model loading, IFR hooks on real Aya 8B, and layer pruning with genera
 
 6. **`torch.cuda.get_device_properties(0).total_memory`** -- use `.total_memory`, not `.total_mem` (PyTorch 2.9+).
 
+7. **Heuristic pruning replicates Moslem et al. (WMT 2025) exactly:** 200 validation sentences, `apply_chat_template` prompts (via `translate_batch_chat`), bfloat16 precision, first and last layers (0, 31) protected from removal. See `src/pruning/heuristic.py`.
+
+8. **vLLM is used only for KD data generation** (`src/distillation/generate_kd.py`) to run Aya-32B with tensor parallelism across 4 GPUs. All other translation uses HF `model.generate()`. vLLM requires `python3-devel` headers on compute nodes for Triton JIT compilation — workaround: `export C_INCLUDE_PATH=/home/vacl2/python3.11-headers2/usr/include/python3.11` (headers extracted from RPM into home dir). This is set in `scripts/slurm/generate_kd.sh`.
+
 ## Common Commands
 
 ```bash
@@ -80,7 +84,7 @@ python -c "from comet import download_model; download_model('Unbabel/wmt22-comet
 # Submit a single experiment
 sbatch scripts/slurm/run_experiment.sh experiments/configs/I1_8.yaml
 
-# Submit a heuristic pruning experiment (longer runtime, dedicated script)
+# Submit a heuristic pruning experiment (longer runtime, dedicated script, 1 GPU)
 sbatch scripts/slurm/run_heuristic.sh experiments/configs/M1_8.yaml
 
 # Submit all experiments with dependency chains
@@ -110,13 +114,13 @@ python scripts/smoke_test.py
 | `src/attribution/ifr.py` | IFR implementation: forward hooks on residual stream, proximity-based L1 scoring per layer |
 | `src/attribution/score_layers.py` | CLI to score all layers on dataset, save ranking to JSON |
 | `src/pruning/remove_layers.py` | Physical layer deletion from `model.model.layers` + layer_idx re-indexing |
-| `src/pruning/heuristic.py` | Moslem et al. replication: iterative remove-least-impactful-layer via chrF++ eval (O(n^2)) |
+| `src/pruning/heuristic.py` | Moslem et al. replication: iterative remove-least-impactful-layer via chrF++ eval, 200 val sentences, chat-templated prompts, bfloat16, first/last layers protected |
 | `src/pruning/guided.py` | IFR-guided: fixed-count or threshold-based layer selection from pre-computed scores |
 | `src/finetuning/train.py` | LoRA/QLoRA fine-tuning via PEFT + TRL (r=16, alpha=32, 3 epochs) |
 | `src/distillation/generate_kd.py` | Generate synthetic translations from Aya 32B teacher, filter by COMET >= 0.7 |
 | `src/distillation/train_kd.py` | Fine-tune on merged authentic + KD data |
 | `src/quantization/quantize.py` | BitsAndBytes INT4 (NF4) quantization |
-| `src/evaluation/translate.py` | Batch translation (HF generate with left-padding, or vLLM) |
+| `src/evaluation/translate.py` | Batch translation: `translate_batch` (raw prompts), `translate_batch_chat` (chat-templated, used by heuristic pruning), `translate_with_vllm` (KD only) |
 | `src/evaluation/metrics.py` | COMET, chrF++, BLEU, model size, inference speed |
 | `src/evaluation/run_eval.py` | CLI to evaluate a model on test set |
 | `src/evaluation/aggregate_results.py` | Collect all `results.json` files into comparison CSV |
