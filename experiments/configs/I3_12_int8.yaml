@@ -1,0 +1,17 @@
+base_model: CohereForAI/aya-expanse-8b
+description: IFR pruning (12 removed) + FT + INT8
+distillation:
+  enabled: false
+experiment_id: I3_12_int8
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+pruning:
+  method: ifr
+  n_remove: 12
+  scores_path: experiments/results/ifr_scores.json
+quantization:
+  bits: 8
+  enabled: true
+seed: 42

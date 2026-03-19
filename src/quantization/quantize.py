@@ -1,4 +1,4 @@
-"""INT4 quantization using BitsAndBytes."""
+"""Model quantization using BitsAndBytes (INT4 or INT8)."""
 
 import argparse
 from pathlib import Path
@@ -12,15 +12,17 @@ from src.utils import load_env
 def quantize_model(
     model_name_or_path: str,
     output_dir: Path,
+    bits: int = 4,
     quant_type: str = "nf4",
     compute_dtype: torch.dtype = torch.float16,
 ) -> Path:
-    """Load a model with INT4 quantization and save it.
+    """Load a model with quantization and save it.
 
     Args:
         model_name_or_path: HuggingFace model or path.
         output_dir: Where to save quantized model.
-        quant_type: Quantization type (nf4 or fp4).
+        bits: Quantization bits (4 or 8).
+        quant_type: Quantization type for 4-bit (nf4 or fp4). Ignored for 8-bit.
         compute_dtype: Compute dtype for quantized layers.
 
     Returns:
@@ -30,14 +32,21 @@ def quantize_model(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=compute_dtype,
-        bnb_4bit_quant_type=quant_type,
-        bnb_4bit_use_double_quant=True,
-    )
+    if bits == 4:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_quant_type=quant_type,
+            bnb_4bit_use_double_quant=True,
+        )
+    elif bits == 8:
+        bnb_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+        )
+    else:
+        raise ValueError(f"Unsupported bits={bits}. Use 4 or 8.")
 
-    print(f"Loading {model_name_or_path} with INT4 quantization ...")
+    print(f"Loading {model_name_or_path} with INT{bits} quantization ...")
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     model = AutoModelForCausalLM.from_pretrained(
         model_name_or_path,
@@ -49,22 +58,22 @@ def quantize_model(
     model.save_pretrained(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
 
-    # Report size
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
-    print(f"Quantized model saved to {output_dir}")
+    print(f"INT{bits} quantized model saved to {output_dir}")
 
     return output_dir
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Quantize model to INT4")
+    parser = argparse.ArgumentParser(description="Quantize model")
     parser.add_argument("--model", required=True, help="Model name or path")
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--bits", type=int, default=4, choices=[4, 8])
     parser.add_argument("--quant-type", default="nf4", choices=["nf4", "fp4"])
     args = parser.parse_args()
 
-    quantize_model(args.model, args.output_dir, args.quant_type)
+    quantize_model(args.model, args.output_dir, bits=args.bits, quant_type=args.quant_type)
 
 
 if __name__ == "__main__":

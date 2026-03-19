@@ -126,7 +126,9 @@ def run_experiment(config_path: Path):
     if do_quant:
         from src.quantization.quantize import quantize_model
         quant_dir = exp_dir / "quantized"
-        model_path = str(quantize_model(model_path, quant_dir))
+        quant_bits = quant_cfg.get("bits", 4)
+        quant_type = quant_cfg.get("quant_type", "nf4")
+        model_path = str(quantize_model(model_path, quant_dir, bits=quant_bits, quant_type=quant_type))
 
     # ── Step 4: Evaluation ───────────────────────────────────────────────
     from src.config import SRC_LANG_NAME, TGT_LANG_NAME, TRANSLATION_PROMPT
@@ -150,15 +152,16 @@ def run_experiment(config_path: Path):
 
     eval_kwargs = {"dtype": torch.float16, "device_map": "auto"}
     if do_quant:
-        # When quantization was applied, the saved model is already quantized
-        # on disk. We re-apply BitsAndBytes config at load time so HF loads
-        # the 4-bit weights correctly instead of treating them as full precision.
         from transformers import BitsAndBytesConfig
-        eval_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4",
-        )
+        quant_bits = quant_cfg.get("bits", 4)
+        if quant_bits == 8:
+            eval_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+        else:
+            eval_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type=quant_cfg.get("quant_type", "nf4"),
+            )
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForCausalLM.from_pretrained(model_path, **eval_kwargs)

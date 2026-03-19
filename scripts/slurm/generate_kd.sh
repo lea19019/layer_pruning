@@ -5,9 +5,9 @@
 #SBATCH --account=sdrich
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=256G
-#SBATCH --gres=gpu:h200:4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --gres=gpu:h200:1
 #SBATCH --time=12:00:00
 #SBATCH --chdir=/home/vacl2/attention_lp
 #SBATCH --output=logs/generate_kd_%j.out
@@ -27,6 +27,6 @@ python -m src.distillation.generate_kd \
     --ref data/filtered/train.de \
     --output-dir data/kd \
     --teacher CohereForAI/aya-expanse-32b \
-    --tp-size 4
+    --tp-size 1
 
 echo "=== Done ==="
