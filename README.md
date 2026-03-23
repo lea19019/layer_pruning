@@ -16,7 +16,7 @@ This project investigates whether interpretability techniques (Information Flow 
 
 ## Current Results (March 2026)
 
-**36 of 41 experiments completed.** 5 remaining (M2_12, M2_16, M4_8, M4_12, M4_16 — iterative + KD variants) + M1_8_fullft (full FT validation). LRP experiments (L*) were dropped — method not implemented.
+**27 of 30 experiments completed** (excluding legacy INT4 runs kept as reference data). LRP experiments (L*) were dropped — method not implemented.
 
 ### Key Findings
 
@@ -104,6 +104,7 @@ KD consistently hurts. The Aya 32B teacher translations, even after COMET filter
 | **Iterative + FT + KD** | | | | | | | |
 | M2_8 | 24 | 0.838 | 47.16 | 18.89 | 11,984 | 78.3 | +0.005 |
 | M2_12 | 20 | 0.799 | 43.83 | 15.64 | 10,320 | 92.4 | -0.033 |
+| M2_16 | 16 | *running* | | | | | |
 | **Iterative + FT + INT8** | | | | | | | |
 | M3_8_int8 | 24 | 0.853 | 49.19 | 20.14 | 6,992 | 23.1 | +0.021 |
 | M3_12_int8 | 20 | 0.817 | 46.08 | 17.06 | 6,160 | 27.5 | -0.015 |
@@ -129,8 +130,7 @@ At moderate pruning (8–12 layers), IFR matches Moslem. At aggressive pruning (
 ### Still Running
 
 - **M5_8, M5_12, M5_16**: Iterative pruning + full fine-tuning (exact Moslem replication)
-- **M2_12, M2_16**: Iterative + KD (12/16 layers removed)
-- **M4_8, M4_12, M4_16**: Iterative + KD + quantization
+- **M2_16**: Iterative + KD (16 layers removed)
 
 ---
 
@@ -242,7 +242,7 @@ After removal, `self_attn.layer_idx` is re-indexed to prevent KV cache IndexErro
 
 Two modes:
 - **LoRA** (default): r=16, α=32, dropout 0.05, targeting all linear layers (q/k/v/o_proj, gate/up/down_proj). 3 epochs, cosine schedule. Merges weights after training.
-- **Full fine-tuning**: All parameters trainable. 1 epoch. Used in M1_8_fullft to match Moslem et al.'s exact setup and validate that LoRA produces comparable results.
+- **Full fine-tuning**: All parameters trainable. 1 epoch. Used in M5 experiments to match Moslem et al.'s exact setup and validate that LoRA produces comparable results.
 
 ### 4. Knowledge Distillation (`src/distillation/`)
 
