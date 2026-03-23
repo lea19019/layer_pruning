@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-This project investigates whether interpretability techniques (Information Flow Routes / IFR) can identify which layers of **Aya Expanse 8B** (32 layers, Cohere architecture) contribute least to **Czech → German** translation quality, enabling more principled layer pruning than existing heuristic approaches (Moslem et al., WMT 2025).
+This project investigates whether interpretability techniques (Information Flow Routes / IFR) can identify which layers of **Aya Expanse 8B** (32 layers, Cohere architecture) contribute least to **Czech → German** translation quality, enabling more principled layer pruning than existing iterative approaches (Moslem et al., WMT 2025).
 
-**Research question:** Can IFR-guided pruning match or outperform iterative heuristic pruning, while being orders of magnitude cheaper to compute?
+**Research question:** Can IFR-guided pruning match or outperform iterative empirical pruning, while being orders of magnitude cheaper to compute?
 
 - **Model:** Aya Expanse 8B (32 layers, 8B parameters)
 - **Language pair:** Czech → German (CES-DEU)
@@ -16,25 +16,25 @@ This project investigates whether interpretability techniques (Information Flow 
 
 ## Current Results (March 2026)
 
-**36 of 41 experiments completed.** 5 remaining (M2_12, M2_16, M4_8, M4_12, M4_16 — heuristic + KD variants). LRP experiments (L*) were dropped — method not implemented.
+**36 of 41 experiments completed.** 5 remaining (M2_12, M2_16, M4_8, M4_12, M4_16 — iterative + KD variants) + M1_8_fullft (full FT validation). LRP experiments (L*) were dropped — method not implemented.
 
 ### Key Findings
 
-**1. IFR-guided pruning matches heuristic quality at a fraction of the cost.**
+**1. IFR-guided pruning matches iterative pruning quality at a fraction of the cost.**
 
-At 8 layers removed (25% compression), IFR-guided pruning matches or slightly outperforms the iterative heuristic approach from Moslem et al., while requiring only a single forward pass per example instead of O(n×k) evaluations:
+At 8 layers removed (25% compression), IFR-guided pruning matches or slightly outperforms the iterative empirical approach from Moslem et al., while requiring only a single forward pass per example instead of O(n×k) evaluations:
 
 | Method | Layers | COMET | chrF++ | BLEU | Pruning Cost |
 |--------|--------|-------|--------|------|-------------|
 | Baseline (B0) | 32 | 0.832 | 49.26 | 15.92 | — |
 | **IFR + FT (I1_8)** | **24** | **0.860** | **49.88** | **21.51** | **~30 min (200 examples)** |
-| Heuristic + FT (M1_8) | 24 | 0.855 | 49.17 | 20.05 | ~5 hours |
+| Iterative + FT (M1_8) | 24 | 0.855 | 49.17 | 20.05 | ~5 hours |
 | IFR + FT (I1_12) | 20 | 0.828 | 47.15 | 18.32 | ~30 min |
-| Heuristic + FT (M1_12) | 20 | 0.819 | 46.51 | 17.28 | ~8 hours |
+| Iterative + FT (M1_12) | 20 | 0.819 | 46.51 | 17.28 | ~8 hours |
 | IFR + FT (I1_16) | 16 | 0.739 | 42.45 | 13.74 | ~30 min |
-| Heuristic + FT (M1_16) | 16 | 0.764 | 43.12 | 14.52 | ~12 hours |
+| Iterative + FT (M1_16) | 16 | 0.764 | 43.12 | 14.52 | ~12 hours |
 
-IFR outperforms heuristic at 8 and 12 layers removed. At aggressive pruning (16 layers, 50%), heuristic is more robust — likely because its iterative approach captures local compensation effects that IFR's global scoring misses.
+IFR outperforms iterative pruning at 8 and 12 layers removed. At aggressive pruning (16 layers, 50%), iterative is more robust — likely because it captures local compensation effects that IFR's global scoring misses.
 
 **2. Pruned + fine-tuned models beat the unpruned baseline.**
 
@@ -104,42 +104,45 @@ KD consistently hurts. The Aya 32B teacher translations, even after COMET filter
 | **IFR threshold** | | | | | | | |
 | I5_threshold | 22 | 0.847 | 48.69 | 20.20 | 4,288 | 49.0 | +0.015 |
 | I5_threshold_int8 | 22 | 0.850 | 49.00 | 20.21 | 6,576 | 24.1 | +0.018 |
-| **Heuristic + FT** | | | | | | | |
+| **Iterative + FT (LoRA)** | | | | | | | |
 | M1_8 | 24 | 0.855 | 49.17 | 20.05 | 11,984 | 71.8 | +0.023 |
 | M1_12 | 20 | 0.819 | 46.51 | 17.28 | 10,320 | 88.6 | -0.013 |
 | M1_16 | 16 | 0.764 | 43.12 | 14.52 | 8,656 | 107.5 | -0.069 |
-| **Heuristic + FT + KD** | | | | | | | |
+| **Iterative + Full FT (Moslem replication)** | | | | | | | |
+| M1_8_fullft | 24 | *running* | | | | | |
+| **Iterative + FT + KD** | | | | | | | |
 | M2_8 | 24 | 0.838 | 47.16 | 18.89 | 11,984 | 78.3 | +0.006 |
-| **Heuristic + FT + INT4** | | | | | | | |
+| **Iterative + FT + INT4** | | | | | | | |
 | M3_8 | 24 | 0.850 | 48.62 | 19.75 | 4,496 | 43.9 | +0.018 |
 | M3_12 | 20 | 0.815 | 45.94 | 16.76 | 4,080 | 53.1 | -0.017 |
 | M3_16 | 16 | 0.756 | 42.53 | 13.94 | 3,664 | 65.4 | -0.076 |
-| **Heuristic + FT + INT8** | | | | | | | |
+| **Iterative + FT + INT8** | | | | | | | |
 | M3_8_int8 | 24 | 0.853 | 49.19 | 20.14 | 6,992 | 23.1 | +0.021 |
 | M3_12_int8 | 20 | 0.817 | 46.08 | 17.06 | 6,160 | 27.5 | -0.015 |
 | M3_16_int8 | 16 | 0.761 | 43.19 | 14.83 | 5,328 | 33.0 | -0.071 |
-| **Heuristic + FT + KD + INT8** | | | | | | | |
+| **Iterative + FT + KD + INT8** | | | | | | | |
 | M4_8_int8 | 24 | 0.835 | 47.00 | 18.86 | 6,992 | 22.5 | +0.002 |
 | M4_12_int8 | 20 | 0.805 | 44.59 | 16.11 | 6,160 | 27.2 | -0.027 |
 | M4_16_int8 | 16 | 0.739 | 40.77 | 12.95 | 5,328 | 33.7 | -0.093 |
 
 ### Comparison with Moslem et al. (WMT 2025)
 
-Our heuristic replication (M1) and IFR results compared to the [original paper](https://aclanthology.org/2025.wmt-1.78/). Moslem uses the same dataset (News Commentary v18) and filtering pipeline but a different random split (seed 0 vs our seed 42), so absolute numbers differ slightly. Relative patterns are consistent:
+Our iterative pruning replication (M1) and IFR results compared to the [original paper](https://aclanthology.org/2025.wmt-1.78/). Moslem uses the same dataset (News Commentary v18) and filtering pipeline but a different random split (seed 0 vs our seed 42), so absolute numbers differ slightly. Relative patterns are consistent:
 
-| Pruning Level | Moslem COMET | Our IFR COMET | Our Heuristic COMET |
+| Pruning Level | Moslem COMET | Our IFR COMET | Our Iterative COMET |
 |--------------|-------------|---------------|---------------------|
 | Baseline (32L) | 87.18 | 83.21 | — |
 | 24 layers (-8) | 85.70 | **85.97** | 85.54 |
 | 20 layers (-12) | 83.95 | 82.84 | 81.90 |
 | 16 layers (-16) | 79.39 | 73.91 | 76.35 |
 
-At moderate pruning (8–12 layers), IFR matches Moslem. At aggressive pruning (16 layers), heuristic is more robust.
+At moderate pruning (8–12 layers), IFR matches Moslem. At aggressive pruning (16 layers), iterative is more robust.
 
 ### Still Running
 
-- **M2_12, M2_16**: Heuristic + KD (12/16 layers removed)
-- **M4_8, M4_12, M4_16**: Heuristic + KD + INT4
+- **M1_8_fullft**: Iterative pruning (8 removed) + full fine-tuning (exact Moslem replication, validates LoRA vs full FT)
+- **M2_12, M2_16**: Iterative + KD (12/16 layers removed)
+- **M4_8, M4_12, M4_16**: Iterative + KD + INT4
 
 ---
 
@@ -242,14 +245,16 @@ Layers with low importance scores across many translation examples are pruning c
 
 ### 2. Layer Pruning (`src/pruning/`)
 
-- **Heuristic (Moslem replication):** For each remaining layer (first/last protected), temporarily remove it, translate 200 sentences, measure chrF++. Remove the least-impactful layer. Repeat until target reached. O(n×k) evaluations.
+- **Iterative empirical pruning (Moslem replication):** For each remaining layer (first/last protected), temporarily remove it, translate 200 sentences, measure chrF++. Remove the least-impactful layer. Repeat until target reached. O(n×k) evaluations.
 - **IFR-guided:** Score layers once on 200 examples, remove the N lowest. O(n) cost.
 
 After removal, `self_attn.layer_idx` is re-indexed to prevent KV cache IndexError.
 
 ### 3. Fine-tuning (`src/finetuning/train.py`)
 
-LoRA (r=16, α=32) targeting all linear layers. 3 epochs, cosine schedule. Merges weights after training.
+Two modes:
+- **LoRA** (default): r=16, α=32, dropout 0.05, targeting all linear layers (q/k/v/o_proj, gate/up/down_proj). 3 epochs, cosine schedule. Merges weights after training.
+- **Full fine-tuning**: All parameters trainable. 1 epoch. Used in M1_8_fullft to match Moslem et al.'s exact setup and validate that LoRA produces comparable results.
 
 ### 4. Knowledge Distillation (`src/distillation/`)
 
@@ -263,23 +268,60 @@ BitsAndBytes INT4 (NF4, double quantization) and INT8. Reduces model size signif
 
 ## Experimental Design
 
-59 experiment configs across baselines, heuristic (Moslem replication), and IFR-guided variants. Each varies one factor at a time from the baseline.
+60 experiment configs across baselines, iterative pruning (Moslem replication), and IFR-guided variants. Each varies one factor at a time from the baseline.
 
-| Group | Pruning | FT | KD | Quant | Configs |
-|-------|---------|----|----|-------|---------|
-| B0 | None | No | No | No | 1 |
-| B1 | None | No | No | INT4/INT8 | 2 |
-| M1 | Heuristic (8/12/16) | Yes | No | No | 3 |
-| M2 | Heuristic (8/12/16) | Yes | Yes | No | 3 |
-| M3 | Heuristic (8/12/16) | Yes | No | INT4/INT8 | 6 |
-| M4 | Heuristic (8/12/16) | Yes | Yes | INT4/INT8 | 6 |
-| I1 | IFR (8/12/16) | Yes | No | No | 3 |
-| I2 | IFR (8/12/16) | Yes | Yes | No | 3 |
-| I3 | IFR (8/12/16) | Yes | No | INT4/INT8 | 6 |
-| I4 | IFR (8/12/16) | Yes | Yes | INT4/INT8 | 6 |
-| I5 | IFR (threshold) | Yes | No | INT4/INT8 | 2 |
+### Experiment Matrix
 
-All experiments use seed 42, Aya Expanse 8B as base model, and 500 test sentences.
+| Group | Pruning | FT Method | KD | Quant | Configs |
+|-------|---------|-----------|-----|-------|---------|
+| B0 | None | None | No | No | 1 |
+| B1 | None | None | No | INT4/INT8 | 2 |
+| M1 | Iterative (8/12/16) | LoRA | No | No | 3 |
+| M1_8_fullft | Iterative (8) | Full FT | No | No | 1 |
+| M2 | Iterative (8/12/16) | LoRA | Yes | No | 3 |
+| M3 | Iterative (8/12/16) | LoRA | No | INT4/INT8 | 6 |
+| M4 | Iterative (8/12/16) | LoRA | Yes | INT4/INT8 | 6 |
+| I1 | IFR (8/12/16) | LoRA | No | No | 3 |
+| I2 | IFR (8/12/16) | LoRA | Yes | No | 3 |
+| I3 | IFR (8/12/16) | LoRA | No | INT4/INT8 | 6 |
+| I4 | IFR (8/12/16) | LoRA | Yes | INT4/INT8 | 6 |
+| I5 | IFR (threshold) | LoRA | No | INT4/INT8 | 2 |
+
+### Controlled Variables
+
+| Variable | Value |
+|----------|-------|
+| Base model | Aya Expanse 8B (32 layers, 8B params) |
+| Random seed | 42 |
+| Dataset | News Commentary v18 Czech-German |
+| Training data | 100,000 sentence pairs |
+| Test data | 500 sentence pairs |
+| Translation prompt | `"Translate the following Czech text to German.\n\nCzech: {source}\nGerman:"` |
+| Max generation tokens | 256 |
+| Evaluation metrics | COMET (wmt22-comet-da), chrF++, BLEU, model size, inference speed |
+
+### Manipulated Variables
+
+| Variable | Levels |
+|----------|--------|
+| Pruning method | None, Iterative empirical (Moslem et al.), IFR-guided, IFR threshold |
+| Layers removed | 0, 8, 12, 16 (or auto via threshold) |
+| Recovery fine-tuning | None, LoRA (r=16, α=32, 3 epochs), Full FT (1 epoch) |
+| Knowledge distillation | No, Yes (Aya 32B teacher, COMET ≥ 0.7 filter) |
+| Quantization | None, INT4 (NF4), INT8 |
+
+### Fine-tuning Hyperparameters
+
+| Parameter | LoRA | Full FT (Moslem replication) |
+|-----------|------|------------------------------|
+| Trainable parameters | ~26M (0.5%) | All (~5-8B, 100%) |
+| Rank / Alpha | 16 / 32 | — |
+| Target modules | q/k/v/o_proj, gate/up/down_proj | All |
+| Epochs | 3 | 1 |
+| Learning rate | 2e-5 | 2e-5 |
+| Batch size | 8 | 8 |
+| Gradient accumulation | 8 | 8 |
+| Scheduler | Cosine, 5% warmup | Cosine, 5% warmup |
 
 ---
 

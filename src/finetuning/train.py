@@ -72,13 +72,14 @@ def finetune(
     train_tgt: Path,
     output_dir: Path,
     use_qlora: bool = False,
+    full_ft: bool = False,
     epochs: int = FT_EPOCHS,
     batch_size: int = FT_BATCH_SIZE,
     grad_accum: int = FT_GRAD_ACCUM,
     learning_rate: float = FT_LEARNING_RATE,
     max_seq_length: int = 512,
 ):
-    """Fine-tune a (possibly pruned) model with LoRA.
+    """Fine-tune a (possibly pruned) model with LoRA or full fine-tuning.
 
     Args:
         model_name_or_path: HuggingFace model or path to pruned model.
@@ -86,6 +87,7 @@ def finetune(
         train_tgt: Path to training target sentences.
         output_dir: Where to save the fine-tuned model.
         use_qlora: If True, load model in 4-bit and use QLoRA.
+        full_ft: If True, do full fine-tuning (all parameters) instead of LoRA.
         epochs: Number of training epochs.
         batch_size: Per-device batch size.
         grad_accum: Gradient accumulation steps.
@@ -116,13 +118,19 @@ def finetune(
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     model = AutoModelForCausalLM.from_pretrained(model_name_or_path, **model_kwargs)
 
-    if use_qlora:
-        model = prepare_model_for_kbit_training(model)
+    if full_ft:
+        # Full fine-tuning: all parameters trainable
+        total = sum(p.numel() for p in model.parameters())
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Full fine-tuning: trainable params: {trainable:,} || all params: {total:,} || trainable%: 100.00")
+    else:
+        if use_qlora:
+            model = prepare_model_for_kbit_training(model)
 
-    # LoRA
-    lora_config = create_lora_config()
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
+        # LoRA
+        lora_config = create_lora_config()
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -155,14 +163,20 @@ def finetune(
 
     trainer.train()
 
-    # Save merged model
-    merged_dir = output_dir / "merged"
-    print(f"Saving merged model to {merged_dir}")
-    merged_model = model.merge_and_unload()
-    merged_model.save_pretrained(str(merged_dir))
-    tokenizer.save_pretrained(str(merged_dir))
+    # Save model
+    if full_ft:
+        save_dir = output_dir / "merged"
+        print(f"Saving full-FT model to {save_dir}")
+        model.save_pretrained(str(save_dir))
+        tokenizer.save_pretrained(str(save_dir))
+    else:
+        save_dir = output_dir / "merged"
+        print(f"Saving merged LoRA model to {save_dir}")
+        merged_model = model.merge_and_unload()
+        merged_model.save_pretrained(str(save_dir))
+        tokenizer.save_pretrained(str(save_dir))
 
-    return merged_dir
+    return save_dir
 
 
 def main():

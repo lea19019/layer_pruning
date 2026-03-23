@@ -102,6 +102,7 @@ def run_experiment(config_path: Path):
 
     if do_ft:
         use_qlora = ft_cfg.get("qlora", False)
+        use_full_ft = ft_cfg.get("full_ft", False)
 
         if do_kd:
             from src.distillation.train_kd import finetune_with_kd
@@ -116,6 +117,7 @@ def run_experiment(config_path: Path):
                 train_tgt=FILTERED_DIR / "train.de",
                 output_dir=ft_output,
                 use_qlora=use_qlora,
+                full_ft=use_full_ft,
                 epochs=ft_cfg.get("epochs", 3),
             ))
 
