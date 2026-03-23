@@ -127,6 +127,20 @@ Our iterative pruning replication (M1) and IFR results compared to the [original
 
 At moderate pruning (8–12 layers), IFR matches Moslem. At aggressive pruning (16 layers), iterative is more robust.
 
+### Layer Overlap: IFR vs Iterative
+
+Both methods target middle layers, but select differently. IFR removes a contiguous block (layers 8–18), while iterative pruning is more scattered, reaching into higher layers (23, 26, 28). Overlap increases as more layers are removed — at 16 layers, both methods converge since few "safe" layers remain.
+
+| Layers Removed | IFR (sorted) | Iterative (sorted) | Overlap | Jaccard |
+|---------------|-------------|-------------------|---------|---------|
+| 8 | 8,10,11,12,13,14,15,16 | 7,9,12,16,17,18,23,26 | 2/8 | 0.14 |
+| 12 | 7–18 | 7,9,10,12,15–18,22,23,26,28 | 8/12 | 0.50 |
+| 16 | 6–18,20,22,23 | 7–18,22,23,26,28 | 14/16 | 0.78 |
+
+Despite very different layer selections at 8 layers removed, both achieve similar quality (IFR: 0.860, iterative: 0.855) — different paths to the same destination.
+
+Layer removal data is saved for every pruned experiment: `pruning_info.json` (IFR) and `pruning_log.json` (iterative) under each experiment's results directory.
+
 ### Still Running
 
 - **M5_8, M5_12, M5_16**: Iterative pruning + full fine-tuning (exact Moslem replication)
