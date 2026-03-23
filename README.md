@@ -40,15 +40,14 @@ IFR outperforms iterative pruning at 8 and 12 layers removed. At aggressive prun
 
 All models with 8 layers removed and LoRA fine-tuning outperform the unpruned baseline (B0: COMET 0.832). This is consistent with Moslem et al.'s findings. Fine-tuning on the translation task is the primary quality driver.
 
-**3. Quantization preserves quality but doesn't speed up inference on high-end GPUs.**
+**3. INT8 quantization preserves quality but doesn't speed up inference on high-end GPUs.**
 
 | Config | COMET | Size (MB) | Speed (tok/s) | Speedup |
 |--------|-------|-----------|---------------|---------|
 | I1_8 (fp16) | 0.860 | 11,984 | 70.2 | 1.16x |
-| I3_8 (INT4) | 0.857 | 4,496 | 45.9 | 0.76x |
 | I3_8_int8 (INT8) | 0.860 | 6,992 | 23.2 | 0.38x |
 
-INT4 reduces size by 62% with negligible quality loss (0.003 COMET). INT8 preserves quality even better. However, BitsAndBytes quantization introduces dequantization overhead that actually **slows down** inference on H200 GPUs. Quantization's value is **memory reduction for deployment on constrained hardware**, not throughput.
+INT8 reduces size by 42% with no quality loss. However, BitsAndBytes quantization introduces dequantization overhead that actually **slows down** inference on H200 GPUs. Quantization's value is **memory reduction for deployment on constrained hardware**, not throughput.
 
 **4. Knowledge distillation from Aya 32B does not improve results.**
 
@@ -75,8 +74,7 @@ KD consistently hurts. The Aya 32B teacher translations, even after COMET filter
 |-----------|--------|-------|--------|------|-----------|-------|--------|
 | **Baselines** | | | | | | | |
 | B0 (baseline) | 32 | 0.832 | 49.26 | 15.92 | 15,312 | 60.5 | — |
-| B1 (INT4) | 32 | 0.849 | 50.51 | 20.12 | 5,328 | 36.1 | +0.017 |
-| B1_int8 | 32 | 0.841 | 50.46 | 18.36 | 8,656 | 18.0 | +0.009 |
+| B1_int8 (INT8 only) | 32 | 0.841 | 50.46 | 18.36 | 8,656 | 18.0 | +0.009 |
 | **IFR + FT** | | | | | | | |
 | I1_8 | 24 | 0.860 | 49.88 | 21.51 | 11,984 | 70.2 | +0.028 |
 | I1_12 | 20 | 0.828 | 47.15 | 18.32 | 10,320 | 90.0 | -0.004 |
@@ -85,37 +83,26 @@ KD consistently hurts. The Aya 32B teacher translations, even after COMET filter
 | I2_8 | 24 | 0.847 | 48.67 | 20.64 | 11,984 | 78.4 | +0.015 |
 | I2_12 | 20 | 0.820 | 45.85 | 17.92 | 10,320 | 92.2 | -0.012 |
 | I2_16 | 16 | 0.724 | 40.05 | 12.20 | 8,656 | 108.0 | -0.108 |
-| **IFR + FT + INT4** | | | | | | | |
-| I3_8 | 24 | 0.857 | 49.21 | 20.60 | 4,496 | 45.9 | +0.025 |
-| I3_12 | 20 | 0.826 | 46.62 | 18.18 | 4,080 | 54.0 | -0.006 |
-| I3_16 | 16 | 0.724 | 41.96 | 12.77 | 3,664 | 63.4 | -0.108 |
 | **IFR + FT + INT8** | | | | | | | |
 | I3_8_int8 | 24 | 0.860 | 50.06 | 21.83 | 6,992 | 23.2 | +0.028 |
 | I3_12_int8 | 20 | 0.828 | 47.13 | 18.56 | 6,160 | 27.5 | -0.005 |
 | I3_16_int8 | 16 | 0.732 | 42.62 | 13.52 | 5,328 | 33.9 | -0.101 |
-| **IFR + FT + KD + INT4** | | | | | | | |
-| I4_8 | 24 | 0.841 | 47.80 | 19.79 | 4,496 | 46.6 | +0.009 |
-| I4_12 | 20 | 0.816 | 45.53 | 17.27 | 4,080 | 55.0 | -0.016 |
-| I4_16 | 16 | 0.720 | 40.53 | 12.33 | 3,664 | 66.5 | -0.113 |
 | **IFR + FT + KD + INT8** | | | | | | | |
 | I4_8_int8 | 24 | 0.847 | 48.55 | 20.56 | 6,992 | 22.9 | +0.014 |
 | I4_12_int8 | 20 | 0.819 | 45.89 | 17.85 | 6,160 | 26.5 | -0.013 |
 | I4_16_int8 | 16 | 0.724 | 40.36 | 11.94 | 5,328 | 33.4 | -0.108 |
 | **IFR threshold** | | | | | | | |
-| I5_threshold | 22 | 0.847 | 48.69 | 20.20 | 4,288 | 49.0 | +0.015 |
 | I5_threshold_int8 | 22 | 0.850 | 49.00 | 20.21 | 6,576 | 24.1 | +0.018 |
 | **Iterative + FT (LoRA)** | | | | | | | |
 | M1_8 | 24 | 0.855 | 49.17 | 20.05 | 11,984 | 71.8 | +0.023 |
 | M1_12 | 20 | 0.819 | 46.51 | 17.28 | 10,320 | 88.6 | -0.013 |
 | M1_16 | 16 | 0.764 | 43.12 | 14.52 | 8,656 | 107.5 | -0.069 |
 | **Iterative + Full FT (Moslem replication)** | | | | | | | |
-| M1_8_fullft | 24 | *running* | | | | | |
+| M5_8 | 24 | *running* | | | | | |
+| M5_12 | 20 | *running* | | | | | |
+| M5_16 | 16 | *running* | | | | | |
 | **Iterative + FT + KD** | | | | | | | |
 | M2_8 | 24 | 0.838 | 47.16 | 18.89 | 11,984 | 78.3 | +0.006 |
-| **Iterative + FT + INT4** | | | | | | | |
-| M3_8 | 24 | 0.850 | 48.62 | 19.75 | 4,496 | 43.9 | +0.018 |
-| M3_12 | 20 | 0.815 | 45.94 | 16.76 | 4,080 | 53.1 | -0.017 |
-| M3_16 | 16 | 0.756 | 42.53 | 13.94 | 3,664 | 65.4 | -0.076 |
 | **Iterative + FT + INT8** | | | | | | | |
 | M3_8_int8 | 24 | 0.853 | 49.19 | 20.14 | 6,992 | 23.1 | +0.021 |
 | M3_12_int8 | 20 | 0.817 | 46.08 | 17.06 | 6,160 | 27.5 | -0.015 |
@@ -140,9 +127,9 @@ At moderate pruning (8–12 layers), IFR matches Moslem. At aggressive pruning (
 
 ### Still Running
 
-- **M1_8_fullft**: Iterative pruning (8 removed) + full fine-tuning (exact Moslem replication, validates LoRA vs full FT)
+- **M5_8, M5_12, M5_16**: Iterative pruning + full fine-tuning (exact Moslem replication)
 - **M2_12, M2_16**: Iterative + KD (12/16 layers removed)
-- **M4_8, M4_12, M4_16**: Iterative + KD + INT4
+- **M4_8, M4_12, M4_16**: Iterative + KD + quantization
 
 ---
 
@@ -207,7 +194,7 @@ News Commentary v18 CES-DEU filtering (replicating Moslem et al.):
 │   │   ├── generate_kd.py      # Aya-32B teacher translations via vLLM, COMET filtered
 │   │   └── train_kd.py         # Fine-tune on merged authentic + KD data
 │   ├── quantization/
-│   │   └── quantize.py         # BitsAndBytes INT4/INT8 quantization
+│   │   └── quantize.py         # BitsAndBytes INT8 quantization
 │   └── evaluation/
 │       ├── translate.py        # Batch translation with stop-string hallucination guard
 │       ├── metrics.py          # COMET, chrF++, BLEU, model size, inference speed
@@ -262,30 +249,30 @@ Aya 32B teacher generates synthetic translations via vLLM (1 GPU, fp16), filtere
 
 ### 5. Quantization (`src/quantization/quantize.py`)
 
-BitsAndBytes INT4 (NF4, double quantization) and INT8. Reduces model size significantly but slows inference on high-VRAM GPUs due to dequantization overhead.
+BitsAndBytes INT8 quantization. Reduces model size by ~42% with no quality loss, but slows inference on high-VRAM GPUs due to dequantization overhead. Quantization's value is memory reduction for deployment on constrained hardware.
 
 ---
 
 ## Experimental Design
 
-60 experiment configs across baselines, iterative pruning (Moslem replication), and IFR-guided variants. Each varies one factor at a time from the baseline.
+30 experiment configs across baselines, iterative pruning (Moslem replication), and IFR-guided variants. Each varies one factor at a time from the baseline.
 
 ### Experiment Matrix
 
 | Group | Pruning | FT Method | KD | Quant | Configs |
 |-------|---------|-----------|-----|-------|---------|
 | B0 | None | None | No | No | 1 |
-| B1 | None | None | No | INT4/INT8 | 2 |
+| B1 | None | None | No | INT8 | 1 |
 | M1 | Iterative (8/12/16) | LoRA | No | No | 3 |
-| M1_8_fullft | Iterative (8) | Full FT | No | No | 1 |
 | M2 | Iterative (8/12/16) | LoRA | Yes | No | 3 |
-| M3 | Iterative (8/12/16) | LoRA | No | INT4/INT8 | 6 |
-| M4 | Iterative (8/12/16) | LoRA | Yes | INT4/INT8 | 6 |
+| M3 | Iterative (8/12/16) | LoRA | No | INT8 | 3 |
+| M4 | Iterative (8/12/16) | LoRA | Yes | INT8 | 3 |
+| M5 | Iterative (8/12/16) | Full FT | No | No | 3 |
 | I1 | IFR (8/12/16) | LoRA | No | No | 3 |
 | I2 | IFR (8/12/16) | LoRA | Yes | No | 3 |
-| I3 | IFR (8/12/16) | LoRA | No | INT4/INT8 | 6 |
-| I4 | IFR (8/12/16) | LoRA | Yes | INT4/INT8 | 6 |
-| I5 | IFR (threshold) | LoRA | No | INT4/INT8 | 2 |
+| I3 | IFR (8/12/16) | LoRA | No | INT8 | 3 |
+| I4 | IFR (8/12/16) | LoRA | Yes | INT8 | 3 |
+| I5 | IFR (threshold) | LoRA | No | INT8 | 1 |
 
 ### Controlled Variables
 
@@ -308,7 +295,7 @@ BitsAndBytes INT4 (NF4, double quantization) and INT8. Reduces model size signif
 | Layers removed | 0, 8, 12, 16 (or auto via threshold) |
 | Recovery fine-tuning | None, LoRA (r=16, α=32, 3 epochs), Full FT (1 epoch) |
 | Knowledge distillation | No, Yes (Aya 32B teacher, COMET ≥ 0.7 filter) |
-| Quantization | None, INT4 (NF4), INT8 |
+| Quantization | None, INT8 |
 
 ### Fine-tuning Hyperparameters
 
