@@ -119,7 +119,10 @@ def finetune(
     model = AutoModelForCausalLM.from_pretrained(model_name_or_path, **model_kwargs)
 
     if full_ft:
-        # Full fine-tuning: all parameters trainable
+        # Full fine-tuning: all parameters trainable.
+        # Must use bf16 (not fp16) to avoid gradient scaler issues with
+        # full-precision gradient unscaling on fp16 parameters.
+        model = model.to(torch.bfloat16)
         total = sum(p.numel() for p in model.parameters())
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Full fine-tuning: trainable params: {trainable:,} || all params: {total:,} || trainable%: 100.00")
@@ -142,7 +145,8 @@ def finetune(
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=grad_accum,
         learning_rate=learning_rate,
-        fp16=True,
+        fp16=not full_ft,
+        bf16=full_ft,
         logging_steps=50,
         save_strategy="epoch",
         save_total_limit=2,

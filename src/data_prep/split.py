@@ -40,11 +40,12 @@ def split_data(
     return train, test
 
 
-def save_split(pairs: list[tuple[str, str]], output_dir: Path, name: str):
+def save_split(pairs: list[tuple[str, str]], output_dir: Path, name: str,
+               src_ext: str = "cs", tgt_ext: str = "de"):
     """Save a split as parallel files."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    src_path = output_dir / f"{name}.cs"
-    tgt_path = output_dir / f"{name}.de"
+    src_path = output_dir / f"{name}.{src_ext}"
+    tgt_path = output_dir / f"{name}.{tgt_ext}"
 
     with open(src_path, "w", encoding="utf-8") as f_src, \
          open(tgt_path, "w", encoding="utf-8") as f_tgt:

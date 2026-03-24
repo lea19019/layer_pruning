@@ -43,12 +43,12 @@ def main():
 
     # Split: 100K train, 500 test (same as cs-de)
     train, test = split_data(pairs, train_size=100_000, test_size=500, seed=42)
-    save_split(train, output_dir, "train")
-    save_split(test, output_dir, "test")
+    save_split(train, output_dir, "train", src_ext="en", tgt_ext="es")
+    save_split(test, output_dir, "test", src_ext="en", tgt_ext="es")
 
     print(f"\nSaved to {output_dir}:")
-    print(f"  train.en: {len(train)} pairs")
-    print(f"  test.en: {len(test)} pairs")
+    print(f"  train.en / train.es: {len(train)} pairs")
+    print(f"  test.en / test.es: {len(test)} pairs")
     print("Done.")
 
 
