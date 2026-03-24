@@ -1,0 +1,13 @@
+experiment_id: B0_enes
+description: "Baseline: Aya Expanse 8B, no pruning, no FT (English-Spanish)"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+lang_pair: en-es
+pruning:
+  method: none
+finetuning:
+  enabled: false
+distillation:
+  enabled: false
+quantization:
+  enabled: false

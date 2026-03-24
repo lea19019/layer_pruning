@@ -1,0 +1,14 @@
+experiment_id: B2
+description: "Baseline: Aya Expanse 8B + LoRA fine-tuning (no pruning)"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+pruning:
+  method: none
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: false
+quantization:
+  enabled: false

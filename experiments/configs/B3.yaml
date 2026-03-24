@@ -1,0 +1,14 @@
+experiment_id: B3
+description: "Baseline: Aya Expanse 8B + full fine-tuning (no pruning, Moslem-style)"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+pruning:
+  method: none
+finetuning:
+  enabled: true
+  full_ft: true
+  epochs: 1
+distillation:
+  enabled: false
+quantization:
+  enabled: false

@@ -22,6 +22,8 @@ def prepare_translation_prompts(
     src_path: Path,
     tgt_path: Path,
     n_samples: int = 200,
+    src_lang_name: str = SRC_LANG_NAME,
+    tgt_lang_name: str = TGT_LANG_NAME,
 ) -> list[str]:
     """Create translation prompts from parallel data for IFR scoring."""
     with open(src_path) as f:
@@ -33,8 +35,8 @@ def prepare_translation_prompts(
     prompts = []
     for src, tgt in zip(sources[:n_samples], targets[:n_samples]):
         prompt = TRANSLATION_PROMPT.format(
-            src_lang=SRC_LANG_NAME,
-            tgt_lang=TGT_LANG_NAME,
+            src_lang=src_lang_name,
+            tgt_lang=tgt_lang_name,
             source=src,
         )
         # Append the reference target so the model processes the full translation
@@ -53,12 +55,18 @@ def main():
     parser.add_argument("--max-length", type=int, default=256)
     parser.add_argument("--output", type=Path, default=RESULTS_DIR / "ifr_scores.json")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--src-lang-name", default=SRC_LANG_NAME)
+    parser.add_argument("--tgt-lang-name", default=TGT_LANG_NAME)
     args = parser.parse_args()
 
     set_seed(args.seed)
     load_env()
 
-    prompts = prepare_translation_prompts(args.src, args.tgt, args.n_samples)
+    prompts = prepare_translation_prompts(
+        args.src, args.tgt, args.n_samples,
+        src_lang_name=args.src_lang_name,
+        tgt_lang_name=args.tgt_lang_name,
+    )
     print(f"Prepared {len(prompts)} prompts for IFR scoring")
 
     scorer = IFRScorer(model_name=args.model)

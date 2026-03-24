@@ -11,8 +11,40 @@ from pathlib import Path
 import torch
 import yaml
 
-from src.config import BASE_MODEL, FILTERED_DIR, KD_DIR, RESULTS_DIR
+from src.config import BASE_MODEL, FILTERED_DIR, KD_DIR, RESULTS_DIR, TRANSLATION_PROMPT
 from src.utils import ensure_dir, load_env, set_seed
+
+
+# Language pair defaults and mappings
+LANG_DEFAULTS = {
+    "cs-de": {"src_code": "cs", "tgt_code": "de", "src_name": "Czech", "tgt_name": "German"},
+    "en-es": {"src_code": "en", "tgt_code": "es", "src_name": "English", "tgt_name": "Spanish"},
+}
+
+
+def _resolve_lang_pair(cfg: dict) -> dict:
+    """Resolve language pair settings from config.
+
+    Supports either explicit src_lang/tgt_lang fields or a lang_pair shortcut.
+    Defaults to cs-de for backward compatibility.
+    """
+    lang_pair = cfg.get("lang_pair", "cs-de")
+    defaults = LANG_DEFAULTS.get(lang_pair, LANG_DEFAULTS["cs-de"])
+
+    return {
+        "src_code": cfg.get("src_lang_code", defaults["src_code"]),
+        "tgt_code": cfg.get("tgt_lang_code", defaults["tgt_code"]),
+        "src_name": cfg.get("src_lang_name", defaults["src_name"]),
+        "tgt_name": cfg.get("tgt_lang_name", defaults["tgt_name"]),
+        "lang_pair": lang_pair,
+    }
+
+
+def _data_dir(lang: dict) -> Path:
+    """Get the filtered data directory for a language pair."""
+    if lang["lang_pair"] == "cs-de":
+        return FILTERED_DIR
+    return FILTERED_DIR.parent / f"filtered_{lang['lang_pair'].replace('-', '_')}"
 
 
 def run_experiment(config_path: Path):
@@ -36,6 +68,12 @@ def run_experiment(config_path: Path):
     model_path = cfg.get("base_model", BASE_MODEL)
     exp_dir = ensure_dir(RESULTS_DIR / exp_id)
 
+    # Resolve language pair
+    lang = _resolve_lang_pair(cfg)
+    data_dir = _data_dir(lang)
+    print(f"Language pair: {lang['src_name']} → {lang['tgt_name']} ({lang['lang_pair']})")
+    print(f"Data dir: {data_dir}")
+
     # ── Step 1: Pruning ──────────────────────────────────────────────────
     pruning_cfg = cfg.get("pruning", {})
     pruning_method = pruning_cfg.get("method", "none")
@@ -56,9 +94,9 @@ def run_experiment(config_path: Path):
         )
 
         # Load validation data
-        with open(FILTERED_DIR / "test.cs") as f:
+        with open(data_dir / f"test.{lang['src_code']}") as f:
             val_src = f.read().splitlines()[:val_size]
-        with open(FILTERED_DIR / "test.de") as f:
+        with open(data_dir / f"test.{lang['tgt_code']}") as f:
             val_ref = f.read().splitlines()[:val_size]
 
         removed = iterative_prune(
@@ -91,7 +129,6 @@ def run_experiment(config_path: Path):
             json.dump({"layers_removed": layers_to_remove, "method": "ifr"}, f, indent=2)
 
     elif pruning_method == "lrp":
-        # Placeholder for LRP pruning (secondary, time permitting)
         print("LRP pruning not yet implemented.")
         return
 
@@ -113,8 +150,8 @@ def run_experiment(config_path: Path):
             ft_output = exp_dir / "finetuned"
             model_path = str(finetune(
                 model_name_or_path=model_path,
-                train_src=FILTERED_DIR / "train.cs",
-                train_tgt=FILTERED_DIR / "train.de",
+                train_src=data_dir / f"train.{lang['src_code']}",
+                train_tgt=data_dir / f"train.{lang['tgt_code']}",
                 output_dir=ft_output,
                 use_qlora=use_qlora,
                 full_ft=use_full_ft,
@@ -133,18 +170,17 @@ def run_experiment(config_path: Path):
         model_path = str(quantize_model(model_path, quant_dir, bits=quant_bits, quant_type=quant_type))
 
     # ── Step 4: Evaluation ───────────────────────────────────────────────
-    from src.config import SRC_LANG_NAME, TGT_LANG_NAME, TRANSLATION_PROMPT
     from src.evaluation.metrics import evaluate_all
     from src.evaluation.translate import translate_batch
 
-    with open(FILTERED_DIR / "test.cs") as f:
+    with open(data_dir / f"test.{lang['src_code']}") as f:
         sources = f.read().splitlines()
-    with open(FILTERED_DIR / "test.de") as f:
+    with open(data_dir / f"test.{lang['tgt_code']}") as f:
         references = f.read().splitlines()
 
     prompts = [
         TRANSLATION_PROMPT.format(
-            src_lang=SRC_LANG_NAME, tgt_lang=TGT_LANG_NAME, source=src
+            src_lang=lang["src_name"], tgt_lang=lang["tgt_name"], source=src
         )
         for src in sources
     ]
@@ -180,6 +216,7 @@ def run_experiment(config_path: Path):
         "description": cfg.get("description", ""),
         "model_path": model_path,
         "config": cfg,
+        "lang_pair": lang["lang_pair"],
         "metrics": metrics,
         "n_test": len(sources),
         "num_layers": model.config.num_hidden_layers,

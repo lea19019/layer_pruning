@@ -1,0 +1,17 @@
+experiment_id: M1_8_enes
+description: Iterative pruning (8 removed) + FT (English-Spanish)
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+lang_pair: en-es
+pruning:
+  method: heuristic
+  target_layers: 24
+  val_size: 200
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: false
+quantization:
+  enabled: false
