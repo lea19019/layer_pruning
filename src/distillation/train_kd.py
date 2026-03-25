@@ -12,12 +12,14 @@ def merge_datasets(
     kd_src: Path,
     kd_tgt: Path,
     output_dir: Path,
+    src_ext: str = "cs",
+    tgt_ext: str = "de",
 ) -> tuple[Path, Path]:
     """Merge authentic and KD data into a single training set."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    merged_src = output_dir / "train_kd.cs"
-    merged_tgt = output_dir / "train_kd.de"
+    merged_src = output_dir / f"train_kd.{src_ext}"
+    merged_tgt = output_dir / f"train_kd.{tgt_ext}"
 
     with open(authentic_src) as f:
         a_src = f.read().splitlines()
@@ -44,15 +46,21 @@ def finetune_with_kd(
     model_name_or_path: str,
     output_dir: Path,
     use_qlora: bool = False,
+    data_dir: Path = FILTERED_DIR,
+    kd_dir: Path = KD_DIR,
+    src_ext: str = "cs",
+    tgt_ext: str = "de",
 ):
     """Fine-tune using merged authentic + KD data."""
     # Merge datasets
     merged_src, merged_tgt = merge_datasets(
-        authentic_src=FILTERED_DIR / "train.cs",
-        authentic_tgt=FILTERED_DIR / "train.de",
-        kd_src=KD_DIR / "kd.cs",
-        kd_tgt=KD_DIR / "kd.de",
-        output_dir=FILTERED_DIR,
+        authentic_src=data_dir / f"train.{src_ext}",
+        authentic_tgt=data_dir / f"train.{tgt_ext}",
+        kd_src=kd_dir / f"kd.{src_ext}",
+        kd_tgt=kd_dir / f"kd.{tgt_ext}",
+        output_dir=data_dir,
+        src_ext=src_ext,
+        tgt_ext=tgt_ext,
     )
 
     return finetune(

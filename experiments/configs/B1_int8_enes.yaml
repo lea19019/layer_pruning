@@ -1,0 +1,14 @@
+base_model: CohereForAI/aya-expanse-8b
+description: 'Baseline: Aya Expanse 8B with INT8 quantization only (English-Spanish)'
+distillation:
+  enabled: false
+experiment_id: B1_int8_enes
+finetuning:
+  enabled: false
+lang_pair: en-es
+pruning:
+  method: none
+quantization:
+  bits: 8
+  enabled: true
+seed: 42

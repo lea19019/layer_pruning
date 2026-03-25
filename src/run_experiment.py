@@ -144,7 +144,13 @@ def run_experiment(config_path: Path):
         if do_kd:
             from src.distillation.train_kd import finetune_with_kd
             ft_output = exp_dir / "finetuned"
-            model_path = str(finetune_with_kd(model_path, ft_output, use_qlora=use_qlora))
+            # Resolve KD data directory for this language pair
+            kd_dir = KD_DIR if lang["lang_pair"] == "cs-de" else KD_DIR.parent / f"kd_{lang['lang_pair'].replace('-', '_')}"
+            model_path = str(finetune_with_kd(
+                model_path, ft_output, use_qlora=use_qlora,
+                data_dir=data_dir, kd_dir=kd_dir,
+                src_ext=lang["src_code"], tgt_ext=lang["tgt_code"],
+            ))
         else:
             from src.finetuning.train import finetune
             ft_output = exp_dir / "finetuned"
