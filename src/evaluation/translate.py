@@ -17,17 +17,21 @@ STOP_STRINGS = [
     f"\n{SRC_LANG_NAME}:", f" {SRC_LANG_NAME}:",
     "\nCzech:", " Czech:",
     "\nTschechisch:", " Tschechisch:",
-    "\nGerman:", "\n\n",
+    "\nGerman:", "\nDeutsch:",
+    "\nEnglish:", " English:",
+    "\nSpanish:", " Spanish:",
+    "\nEspañol:", " Español:",
+    "\n\n",
 ]
-# Broader regex for post-processing: also catches "Translation:",
-# "(Translation", "German:", "Tschechisch:", and other continuation patterns.
-# Matches with or without a leading newline.
+# Broader regex for post-processing: catches language labels, "Translation:",
+# "(Translation", and other continuation patterns in any language.
 _STOP_PATTERN = re.compile(
     r"[\n ]Czech:|"
     r"[\n ]" + re.escape(SRC_LANG_NAME) + r":|"
     r"[\n ]Tschechisch:|"
-    r"[\n ]German:|"
-    r"[\n ]Translation[:\s(]|"
+    r"[\n ]German:|[\n ]Deutsch:|"
+    r"[\n ]English:|[\n ]Spanish:|[\n ]Español:|"
+    r"[\n ]Translation[:\s(]|[\n ]Traducción[:\s(]|"
     r"\n\(Translation|"
     r"\n\n"
 )

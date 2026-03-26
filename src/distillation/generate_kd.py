@@ -27,6 +27,8 @@ def generate_kd_data(
     max_new_tokens: int = 256,
     tensor_parallel_size: int = 4,
     comet_threshold: float = KD_COMET_THRESHOLD,
+    src_ext: str = "cs",
+    tgt_ext: str = "de",
 ) -> Path:
     """Generate synthetic translations using teacher model, then filter by COMET.
 
@@ -90,20 +92,20 @@ def generate_kd_data(
     output = comet_model.predict(data, batch_size=32, gpus=1)
     scores = output.scores
 
-    # Filter by threshold
+    # Filter by threshold, stripping embedded newlines from teacher outputs
     filtered_src = []
     filtered_tgt = []
     for src, hyp, score in zip(sources, hypotheses, scores):
         if score >= comet_threshold:
-            filtered_src.append(src)
-            filtered_tgt.append(hyp)
+            filtered_src.append(src.replace("\n", " "))
+            filtered_tgt.append(hyp.replace("\n", " "))
 
     print(f"Filtered: {len(filtered_src)}/{len(sources)} pairs "
           f"above COMET threshold {comet_threshold}")
 
     # Save filtered pairs
-    src_out = output_dir / "kd.cs"
-    tgt_out = output_dir / "kd.de"
+    src_out = output_dir / f"kd.{src_ext}"
+    tgt_out = output_dir / f"kd.{tgt_ext}"
     with open(src_out, "w") as f:
         f.write("\n".join(filtered_src) + "\n")
     with open(tgt_out, "w") as f:
@@ -121,6 +123,8 @@ def main():
     parser.add_argument("--teacher", default=TEACHER_MODEL)
     parser.add_argument("--tp-size", type=int, default=4, help="Tensor parallel GPUs")
     parser.add_argument("--comet-threshold", type=float, default=KD_COMET_THRESHOLD)
+    parser.add_argument("--src-ext", default="cs", help="Source file extension")
+    parser.add_argument("--tgt-ext", default="de", help="Target file extension")
     args = parser.parse_args()
 
     generate_kd_data(
@@ -130,6 +134,8 @@ def main():
         teacher_model=args.teacher,
         tensor_parallel_size=args.tp_size,
         comet_threshold=args.comet_threshold,
+        src_ext=args.src_ext,
+        tgt_ext=args.tgt_ext,
     )
 
 

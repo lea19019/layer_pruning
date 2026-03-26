@@ -25,6 +25,8 @@ python -m src.distillation.generate_kd \
     --ref data/filtered_en_es/train.es \
     --output-dir data/kd_en_es \
     --teacher CohereForAI/aya-expanse-32b \
-    --tp-size 1
+    --tp-size 1 \
+    --src-ext en \
+    --tgt-ext es
 
 echo "=== Done ==="
