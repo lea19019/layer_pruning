@@ -35,6 +35,8 @@ def evaluate_without_layer(
     references: list[str],
     batch_size: int = 8,
     max_new_tokens: int = 256,
+    src_lang: str = SRC_LANG_NAME,
+    tgt_lang: str = TGT_LANG_NAME,
 ) -> float:
     """Temporarily remove a layer and evaluate chrF++.
 
@@ -56,8 +58,8 @@ def evaluate_without_layer(
     try:
         prompts = [
             TRANSLATION_PROMPT.format(
-                src_lang=SRC_LANG_NAME,
-                tgt_lang=TGT_LANG_NAME,
+                src_lang=src_lang,
+                tgt_lang=tgt_lang,
                 source=src,
             )
             for src in sources
@@ -85,6 +87,8 @@ def iterative_prune(
     target_layers: int,
     batch_size: int = 8,
     log_path: Path | None = None,
+    src_lang: str = SRC_LANG_NAME,
+    tgt_lang: str = TGT_LANG_NAME,
 ) -> list[int]:
     """Iteratively remove layers that cause the least chrF++ degradation.
 
@@ -125,7 +129,8 @@ def iterative_prune(
                 continue
 
             score = evaluate_without_layer(
-                model, tokenizer, local_idx, sources, references, batch_size
+                model, tokenizer, local_idx, sources, references, batch_size,
+                src_lang=src_lang, tgt_lang=tgt_lang,
             )
             print(f"  Layer {local_idx} (orig {orig_id}): chrF++ = {score:.2f}")
 

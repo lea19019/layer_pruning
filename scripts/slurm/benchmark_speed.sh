@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=benchmark
-#SBATCH --partition=m13h
-#SBATCH --qos=gpu
+#SBATCH --partition=cs
+#SBATCH --qos=cs
 #SBATCH --account=sdrich
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --gres=gpu:h200:1
+#SBATCH --gres=gpu:a100:1
 #SBATCH --time=02:00:00
 #SBATCH --chdir=/home/vacl2/attention_lp
 #SBATCH --output=logs/benchmark_%j.out

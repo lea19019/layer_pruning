@@ -36,6 +36,9 @@ dev = [
     "seaborn>=0.13.0",
 ]
 
+[project.scripts]
+attention-lp = "src.cli:main"
+
 [tool.uv]
 dev-dependencies = [
     "ipykernel>=6.29.0",

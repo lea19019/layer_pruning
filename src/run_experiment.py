@@ -48,15 +48,19 @@ def _data_dir(lang: dict) -> Path:
 
 
 def run_experiment(config_path: Path):
-    """Run a single experiment defined by a YAML config file.
+    """Run a single experiment defined by a YAML config file."""
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+    run_pipeline(cfg)
+
+
+def run_pipeline(cfg: dict):
+    """Run a single experiment from an in-memory config dict.
 
     Pipeline: prune -> finetune (optionally with KD) -> quantize -> evaluate.
     Each stage is optional; `model_path` is threaded through so each stage
     picks up the output of the previous one.
     """
-    with open(config_path) as f:
-        cfg = yaml.safe_load(f)
-
     exp_id = cfg["experiment_id"]
     print(f"\n{'='*60}")
     print(f"Running experiment: {exp_id} - {cfg.get('description', '')}")
@@ -66,13 +70,15 @@ def run_experiment(config_path: Path):
     set_seed(cfg.get("seed", 42))
 
     model_path = cfg.get("base_model", BASE_MODEL)
-    exp_dir = ensure_dir(RESULTS_DIR / exp_id)
+    output_dir = cfg.get("output_dir")
+    exp_dir = ensure_dir(Path(output_dir) if output_dir else RESULTS_DIR / exp_id)
 
     # Resolve language pair
     lang = _resolve_lang_pair(cfg)
-    data_dir = _data_dir(lang)
+    data_dir = Path(cfg["data_dir"]) if cfg.get("data_dir") else _data_dir(lang)
     print(f"Language pair: {lang['src_name']} → {lang['tgt_name']} ({lang['lang_pair']})")
     print(f"Data dir: {data_dir}")
+    print(f"Output dir: {exp_dir}")
 
     # ── Step 1: Pruning ──────────────────────────────────────────────────
     pruning_cfg = cfg.get("pruning", {})
@@ -81,43 +87,54 @@ def run_experiment(config_path: Path):
     if pruning_method == "none":
         print("No pruning.")
     elif pruning_method == "heuristic":
-        from src.pruning.heuristic import iterative_prune
-        from src.pruning.remove_layers import load_and_prune, save_pruned_model
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-
-        target_layers = pruning_cfg["target_layers"]
-        val_size = pruning_cfg.get("val_size", 200)
-
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path, torch_dtype=torch.bfloat16, device_map="auto"
-        )
-
-        # Load validation data
-        with open(data_dir / f"test.{lang['src_code']}") as f:
-            val_src = f.read().splitlines()[:val_size]
-        with open(data_dir / f"test.{lang['tgt_code']}") as f:
-            val_ref = f.read().splitlines()[:val_size]
-
-        removed = iterative_prune(
-            model, tokenizer, val_src, val_ref,
-            target_layers=target_layers,
-            log_path=exp_dir / "pruning_log.json",
-        )
-
         pruned_dir = exp_dir / "pruned_model"
-        save_pruned_model(model, tokenizer, str(pruned_dir))
-        model_path = str(pruned_dir)
+        if pruned_dir.exists() and (pruned_dir / "config.json").exists():
+            print(f"Pruned model already exists at {pruned_dir}, skipping pruning.")
+            model_path = str(pruned_dir)
+        else:
+            from src.pruning.heuristic import iterative_prune
+            from src.pruning.remove_layers import load_and_prune, save_pruned_model
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
+            target_layers = pruning_cfg["target_layers"]
+            val_size = pruning_cfg.get("val_size", 200)
+
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path, torch_dtype=torch.bfloat16, device_map="auto"
+            )
+
+            # Load validation data
+            with open(data_dir / f"test.{lang['src_code']}") as f:
+                val_src = f.read().splitlines()[:val_size]
+            with open(data_dir / f"test.{lang['tgt_code']}") as f:
+                val_ref = f.read().splitlines()[:val_size]
+
+            removed = iterative_prune(
+                model, tokenizer, val_src, val_ref,
+                target_layers=target_layers,
+                log_path=exp_dir / "pruning_log.json",
+                src_lang=lang["src_name"],
+                tgt_lang=lang["tgt_name"],
+            )
+
+            pruned_dir.mkdir(parents=True, exist_ok=True)
+            save_pruned_model(model, tokenizer, str(pruned_dir))
+            model_path = str(pruned_dir)
 
     elif pruning_method == "ifr":
         from src.pruning.guided import get_pruning_plan
         from src.pruning.remove_layers import load_and_prune, save_pruned_model
 
-        scores_path = Path(pruning_cfg.get("scores_path", RESULTS_DIR / "ifr_scores.json"))
-        n_remove = pruning_cfg.get("n_remove")
-        threshold_factor = pruning_cfg.get("threshold_factor")
-
-        layers_to_remove = get_pruning_plan(scores_path, n_remove, threshold_factor)
+        # Support direct layer list (for reproducing heuristic pruning without re-running)
+        direct_layers = pruning_cfg.get("layers_to_remove")
+        if direct_layers:
+            layers_to_remove = sorted(direct_layers)
+        else:
+            scores_path = Path(pruning_cfg.get("scores_path", RESULTS_DIR / "ifr_scores.json"))
+            n_remove = pruning_cfg.get("n_remove")
+            threshold_factor = pruning_cfg.get("threshold_factor")
+            layers_to_remove = get_pruning_plan(scores_path, n_remove, threshold_factor)
 
         model, tokenizer = load_and_prune(model_path, layers_to_remove)
         pruned_dir = exp_dir / "pruned_model"
@@ -125,8 +142,17 @@ def run_experiment(config_path: Path):
         model_path = str(pruned_dir)
 
         # Save pruning info
+        pruning_info = {
+            "method": "ifr",
+            "layers_removed": layers_to_remove,
+            "n_layers_removed": len(layers_to_remove),
+            "n_layers_remaining": 32 - len(layers_to_remove),
+            "threshold_factor": pruning_cfg.get("threshold_factor"),
+        }
+        print("Removed {} layers: {} → {} remaining".format(
+            len(layers_to_remove), layers_to_remove, 32 - len(layers_to_remove)))
         with open(exp_dir / "pruning_info.json", "w") as f:
-            json.dump({"layers_removed": layers_to_remove, "method": "ifr"}, f, indent=2)
+            json.dump(pruning_info, f, indent=2)
 
     elif pruning_method == "lrp":
         print("LRP pruning not yet implemented.")
@@ -144,8 +170,13 @@ def run_experiment(config_path: Path):
         if do_kd:
             from src.distillation.train_kd import finetune_with_kd
             ft_output = exp_dir / "finetuned"
-            # Resolve KD data directory for this language pair
-            kd_dir = KD_DIR if lang["lang_pair"] == "cs-de" else KD_DIR.parent / f"kd_{lang['lang_pair'].replace('-', '_')}"
+            # Resolve KD data directory: explicit override, else derived from language pair
+            if cfg.get("kd_dir"):
+                kd_dir = Path(cfg["kd_dir"])
+            elif lang["lang_pair"] == "cs-de":
+                kd_dir = KD_DIR
+            else:
+                kd_dir = KD_DIR.parent / f"kd_{lang['lang_pair'].replace('-', '_')}"
             model_path = str(finetune_with_kd(
                 model_path, ft_output, use_qlora=use_qlora,
                 data_dir=data_dir, kd_dir=kd_dir,
@@ -216,6 +247,13 @@ def run_experiment(config_path: Path):
         model=model, tokenizer=tokenizer, prompts=prompts,
     )
 
+    # Load pruning info if it exists
+    pruning_info = {}
+    pruning_info_path = exp_dir / "pruning_info.json"
+    if pruning_info_path.exists():
+        with open(pruning_info_path) as f:
+            pruning_info = json.load(f)
+
     # Save final results
     result = {
         "experiment_id": exp_id,
@@ -226,6 +264,7 @@ def run_experiment(config_path: Path):
         "metrics": metrics,
         "n_test": len(sources),
         "num_layers": model.config.num_hidden_layers,
+        "pruning_info": pruning_info,
     }
 
     # Save sample translations for inspection

@@ -1,0 +1,28 @@
+# Recipe: run on a custom dataset with an output dir outside the repo.
+# Expects data_dir to contain: train.<src>.<ext>, test.<src>.<ext>,
+# train.<tgt>.<ext>, test.<tgt>.<ext>. Example for English-Spanish:
+# /path/to/data/{train,test}.{en,es}
+#
+# Equivalent CLI:
+#   attention-lp run --exp-id my_custom --lang-pair en-es \
+#     --data-dir /path/to/data --output-dir /path/to/results \
+#     --pruning ifr --n-remove 8 --finetune --qlora
+experiment_id: my_custom
+description: "IFR prune on a custom en-es corpus"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+lang_pair: en-es
+data_dir: /path/to/your/data
+output_dir: /path/to/your/results
+pruning:
+  method: ifr
+  n_remove: 8
+  scores_path: experiments/results/ifr_scores.json
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: true
+distillation:
+  enabled: false
+quantization:
+  enabled: false

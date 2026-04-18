@@ -1,0 +1,15 @@
+# Recipe: untouched baseline (no pruning, no FT, no quantization).
+# Equivalent CLI: attention-lp run --exp-id my_baseline
+experiment_id: my_baseline
+description: "Aya Expanse 8B baseline evaluation"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+lang_pair: cs-de
+pruning:
+  method: none
+finetuning:
+  enabled: false
+distillation:
+  enabled: false
+quantization:
+  enabled: false

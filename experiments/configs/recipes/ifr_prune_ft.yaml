@@ -1,0 +1,21 @@
+# Recipe: IFR-guided pruning + LoRA fine-tuning.
+# Requires precomputed IFR scores: `attention-lp score-ifr`.
+# Equivalent CLI: attention-lp run --exp-id my_ifr \
+#   --pruning ifr --n-remove 8 --finetune --epochs 3
+experiment_id: my_ifr
+description: "IFR prune 8 layers + LoRA FT"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+lang_pair: cs-de
+pruning:
+  method: ifr
+  n_remove: 8
+  scores_path: experiments/results/ifr_scores.json
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: false
+quantization:
+  enabled: false

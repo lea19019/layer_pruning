@@ -1,0 +1,16 @@
+base_model: CohereForAI/aya-expanse-8b
+description: IFR threshold=0.7 pruning, LoRA FT, KD from Aya 32B
+distillation:
+  enabled: true
+experiment_id: I5_t07_kd
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+pruning:
+  method: ifr
+  scores_path: experiments/results/ifr_scores.json
+  threshold_factor: 0.7
+quantization:
+  enabled: false
+seed: 42

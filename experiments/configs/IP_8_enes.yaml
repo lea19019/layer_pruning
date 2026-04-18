@@ -1,0 +1,15 @@
+base_model: CohereForAI/aya-expanse-8b
+description: IFR pruning only (-8 layers), no fine-tuning (English-Spanish)
+distillation:
+  enabled: false
+experiment_id: IP_8_enes
+finetuning:
+  enabled: false
+lang_pair: en-es
+pruning:
+  method: ifr
+  n_remove: 8
+  scores_path: experiments/results/ifr_scores_enes.json
+quantization:
+  enabled: false
+seed: 42

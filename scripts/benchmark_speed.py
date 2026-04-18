@@ -48,9 +48,22 @@ def get_fp16_model_path(exp_dir: Path) -> str | None:
     cfg = d.get("config", {})
 
     if not cfg.get("quantization", {}).get("enabled", False):
-        # No quantization and no finetuned dir — must be B0 (base model)
         if not cfg.get("finetuning", {}).get("enabled", False):
-            return cfg.get("base_model", "CohereForAI/aya-expanse-8b")
+            # Prune-only experiment: use the saved pruned_model dir
+            pruned = exp_dir / "pruned_model"
+            if pruned.exists() and (pruned / "config.json").exists():
+                return str(pruned)
+            # Otherwise this is B0 (no pruning, no FT) — base model from cache
+            if not cfg.get("pruning", {}).get("enabled", False):
+                from huggingface_hub import scan_cache_dir
+                model_name = cfg.get("base_model", "CohereForAI/aya-expanse-8b")
+                cache_info = scan_cache_dir()
+                for repo in cache_info.repos:
+                    if repo.repo_id == model_name:
+                        for rev in repo.revisions:
+                            return str(rev.snapshot_path)
+                return model_name
+            return None  # prune-only but pruned_model missing — caller must recreate
         return None
 
     # Quantized experiment — find the fp16 equivalent
@@ -118,8 +131,8 @@ def build_prompts(exp_dir: Path) -> tuple[list[str], list[str], list[str]]:
 
 
 def export_gptq(fp16_model_path: str, output_dir: Path, bits: int = 4) -> str:
-    """Export a fp16 model to GPTQ format."""
-    from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
+    """Export a fp16 model to GPTQ format using GPTQModel."""
+    from gptqmodel import GPTQModel, QuantizeConfig
     from transformers import AutoTokenizer
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -132,24 +145,27 @@ def export_gptq(fp16_model_path: str, output_dir: Path, bits: int = 4) -> str:
     print("  Exporting to GPTQ {}bit: {} -> {}".format(bits, fp16_model_path, gptq_path))
 
     tokenizer = AutoTokenizer.from_pretrained(fp16_model_path)
-    quantize_config = BaseQuantizeConfig(bits=bits, group_size=128, desc_act=False)
 
-    model = AutoGPTQForCausalLM.from_pretrained(
-        fp16_model_path, quantize_config=quantize_config
-    )
+    # Build calibration data as plain strings
+    calib_data = []
+    for data_dir in [FILTERED_DIR, Path("data/filtered_en_es")]:
+        src_files = list(data_dir.glob("test.*"))
+        if not src_files:
+            continue
+        for sf in src_files:
+            if sf.suffix in [".cs", ".en"]:
+                with open(sf) as f:
+                    lines = f.read().splitlines()[:128]
+                calib_data.extend(lines)
+                break
+        if len(calib_data) >= 256:
+            break
 
-    # Calibration data — a few translation examples
-    from src.config import SRC_LANG_NAME, TGT_LANG_NAME
-    with open(FILTERED_DIR / "test.cs") as f:
-        sources = f.read().splitlines()[:32]
-    calib_data = [
-        TRANSLATION_PROMPT.format(src_lang=SRC_LANG_NAME, tgt_lang=TGT_LANG_NAME, source=s)
-        for s in sources
-    ]
-    calib_tokens = [tokenizer(t, return_tensors="pt") for t in calib_data]
+    quantize_config = QuantizeConfig(bits=bits, group_size=128)
 
-    model.quantize(calib_tokens)
-    model.save_quantized(str(gptq_path))
+    model = GPTQModel.load(fp16_model_path, quantize_config=quantize_config)
+    model.quantize(calib_data[:256], tokenizer=tokenizer)
+    model.save(str(gptq_path))
     tokenizer.save_pretrained(str(gptq_path))
 
     print("  GPTQ export done: {}".format(gptq_path))
@@ -165,7 +181,7 @@ def benchmark_vllm(model_path: str, prompts: list[str], label: str = "",
     import torch
 
     llm = LLM(model=model_path, dtype="auto", trust_remote_code=True,
-              max_model_len=768)
+              max_model_len=768, gpu_memory_utilization=0.85, max_num_seqs=64)
     params = SamplingParams(max_tokens=256, temperature=0.0, stop=STOP_STRINGS)
 
     # Speed benchmark: warmup + timed samples
@@ -193,25 +209,35 @@ def benchmark_vllm(model_path: str, prompts: list[str], label: str = "",
 
     # Quality evaluation: translate ALL test sentences
     if evaluate_quality and references and sources:
-        from src.evaluation.metrics import compute_comet, compute_chrf, compute_bleu
+        from src.evaluation.metrics import compute_chrf, compute_bleu
 
         all_outputs = llm.generate(prompts, params)
         hypotheses = [_extract_translation(o.outputs[0].text) for o in all_outputs]
 
-        comet = compute_comet(hypotheses, references, sources)
         chrf = compute_chrf(hypotheses, references)
         bleu = compute_bleu(hypotheses, references)
-
-        result["comet"] = round(comet, 4)
         result["chrf"] = round(chrf, 2)
         result["bleu"] = round(bleu, 2)
 
-        print("  {} quality: COMET={:.4f} chrF++={:.2f} BLEU={:.2f}".format(
-            label, comet, chrf, bleu))
+        # Save hypotheses for COMET eval later (avoids GPU memory conflict)
+        hyp_path = Path(label.replace(" ", "_") + "_hyps.txt")
+        result["hypotheses_file"] = str(hyp_path)
+
+        print("  {} quality: chrF++={:.2f} BLEU={:.2f}".format(label, chrf, bleu))
 
     # Free GPU
     del llm
     torch.cuda.empty_cache()
+
+    # COMET needs XLM-R on GPU — run after vLLM is freed
+    if evaluate_quality and references and sources and "chrf" in result:
+        try:
+            from src.evaluation.metrics import compute_comet
+            comet = compute_comet(hypotheses, references, sources)
+            result["comet"] = round(comet, 4)
+            print("  {} COMET={:.4f}".format(label, comet))
+        except Exception as e:
+            print("  {} COMET failed: {}".format(label, e))
 
     return result
 
@@ -220,6 +246,7 @@ def main():
     parser = argparse.ArgumentParser(description="Benchmark speed with vLLM")
     parser.add_argument("--experiment", nargs="*", default=None)
     parser.add_argument("--skip-gptq", action="store_true", help="Only benchmark fp16")
+    parser.add_argument("--force", action="store_true", help="Re-run even if already benchmarked")
     args = parser.parse_args()
 
     load_env()
@@ -232,42 +259,57 @@ def main():
         )
 
     for eid in exp_ids:
-        exp_dir = RESULTS_DIR / eid
-        if not (exp_dir / "results.json").exists():
-            print("SKIP {}: no results".format(eid))
-            continue
+        try:
+            exp_dir = RESULTS_DIR / eid
+            if not (exp_dir / "results.json").exists():
+                print("SKIP {}: no results".format(eid))
+                continue
 
-        fp16_path = get_fp16_model_path(exp_dir)
-        if not fp16_path:
-            print("SKIP {}: no fp16 model found".format(eid))
-            continue
+            with open(exp_dir / "results.json") as f:
+                d = json.load(f)
 
-        prompts, sources, references = build_prompts(exp_dir)
+            # Skip if already benchmarked (has vllm_gptq4 results)
+            existing = d.get("speed_benchmark", {})
+            if "vllm_gptq4" in existing and not args.force:
+                print("SKIP {}: already benchmarked".format(eid))
+                continue
 
-        print("\n=== {} (fp16 model: {}) ===".format(eid, fp16_path[:60]))
+            fp16_path = get_fp16_model_path(exp_dir)
+            if not fp16_path:
+                print("SKIP {}: no fp16 model found".format(eid))
+                continue
 
-        with open(exp_dir / "results.json") as f:
-            d = json.load(f)
+            prompts, sources, references = build_prompts(exp_dir)
 
-        # vLLM fp16 benchmark (speed + quality)
-        fp16_speed = benchmark_vllm(fp16_path, prompts, label="vLLM fp16",
-                                     evaluate_quality=True, references=references, sources=sources)
-        d.setdefault("speed_benchmark", {})["vllm_fp16"] = fp16_speed
+            print("\n=== {} (fp16 model: {}) ===".format(eid, fp16_path[:60]))
 
-        # GPTQ export + benchmark (both 8-bit and 4-bit, speed + quality)
-        if not args.skip_gptq:
-            for bits in [8, 4]:
+            # vLLM fp16 benchmark (speed + quality)
+            if "vllm_fp16" not in existing or args.force:
+                fp16_speed = benchmark_vllm(fp16_path, prompts, label="vLLM fp16",
+                                             evaluate_quality=True, references=references, sources=sources)
+                d.setdefault("speed_benchmark", {})["vllm_fp16"] = fp16_speed
+            else:
+                print("  vLLM fp16 already done, skipping")
+
+            # GPTQ 4-bit export + benchmark
+            if not args.skip_gptq:
                 try:
-                    gptq_path = export_gptq(fp16_path, exp_dir, bits=bits)
-                    gptq_speed = benchmark_vllm(gptq_path, prompts, label="vLLM GPTQ-{}bit".format(bits),
+                    gptq_path = export_gptq(fp16_path, exp_dir, bits=4)
+                    gptq_speed = benchmark_vllm(gptq_path, prompts, label="vLLM GPTQ-4bit",
                                                  evaluate_quality=True, references=references, sources=sources)
-                    d["speed_benchmark"]["vllm_gptq{}".format(bits)] = gptq_speed
+                    d.setdefault("speed_benchmark", {})["vllm_gptq4"] = gptq_speed
                 except Exception as e:
-                    print("  GPTQ {}bit failed: {}".format(bits, e))
+                    print("  GPTQ 4bit failed: {}".format(e))
 
-        # Save
-        with open(exp_dir / "results.json", "w") as f:
-            json.dump(d, f, indent=2, ensure_ascii=False)
+            # Save after each experiment
+            with open(exp_dir / "results.json", "w") as f:
+                json.dump(d, f, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            print("\nERROR {}: {} — continuing to next".format(eid, e))
+            import gc, torch
+            gc.collect()
+            torch.cuda.empty_cache()
 
     print("\nDone.")
 

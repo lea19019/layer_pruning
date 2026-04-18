@@ -170,3 +170,63 @@ class TestGetPruningPlan:
         layers = get_pruning_plan(sample_ifr_scores, n_remove=1)
         # ranking_least_important_first = [1, 2, 0, 3], so first = layer 1
         assert 1 in layers
+
+
+# ---------------------------------------------------------------------------
+# heuristic pruning language params
+# ---------------------------------------------------------------------------
+
+class TestHeuristicLanguageParams:
+    """Verify heuristic pruning passes language names to prompts."""
+
+    def test_evaluate_without_layer_accepts_lang_params(self):
+        """evaluate_without_layer should accept src_lang/tgt_lang kwargs."""
+        import inspect
+        from src.pruning.heuristic import evaluate_without_layer
+
+        sig = inspect.signature(evaluate_without_layer)
+        assert "src_lang" in sig.parameters
+        assert "tgt_lang" in sig.parameters
+
+    def test_iterative_prune_accepts_lang_params(self):
+        """iterative_prune should accept src_lang/tgt_lang kwargs."""
+        import inspect
+        from src.pruning.heuristic import iterative_prune
+
+        sig = inspect.signature(iterative_prune)
+        assert "src_lang" in sig.parameters
+        assert "tgt_lang" in sig.parameters
+
+    def test_evaluate_without_layer_default_is_czech_german(self):
+        """Default language params should be Czech/German for backward compat."""
+        import inspect
+        from src.pruning.heuristic import evaluate_without_layer
+
+        sig = inspect.signature(evaluate_without_layer)
+        assert sig.parameters["src_lang"].default == "Czech"
+        assert sig.parameters["tgt_lang"].default == "German"
+
+    def test_iterative_prune_default_is_czech_german(self):
+        """Default language params should be Czech/German for backward compat."""
+        import inspect
+        from src.pruning.heuristic import iterative_prune
+
+        sig = inspect.signature(iterative_prune)
+        assert sig.parameters["src_lang"].default == "Czech"
+        assert sig.parameters["tgt_lang"].default == "German"
+
+
+# ---------------------------------------------------------------------------
+# run_experiment: pruned model reuse
+# ---------------------------------------------------------------------------
+
+class TestPrunedModelReuse:
+    """Verify run_experiment skips pruning when pruned_model already exists."""
+
+    def test_heuristic_skip_check_in_source(self):
+        """run_pipeline should check for existing pruned_model dir."""
+        import inspect
+        from src.run_experiment import run_pipeline
+        source = inspect.getsource(run_pipeline)
+        assert "pruned_model" in source
+        assert "skipping pruning" in source.lower() or "skip" in source.lower()

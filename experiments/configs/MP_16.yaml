@@ -1,0 +1,29 @@
+base_model: CohereForAI/aya-expanse-8b
+description: Heuristic pruning only (-16 layers), no fine-tuning
+distillation:
+  enabled: false
+experiment_id: MP_16
+finetuning:
+  enabled: false
+pruning:
+  layers_to_remove:
+  - 12
+  - 18
+  - 7
+  - 26
+  - 9
+  - 23
+  - 17
+  - 16
+  - 10
+  - 28
+  - 22
+  - 15
+  - 11
+  - 13
+  - 14
+  - 8
+  method: ifr
+quantization:
+  enabled: false
+seed: 42

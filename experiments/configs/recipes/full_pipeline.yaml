@@ -1,0 +1,24 @@
+# Recipe: end-to-end pipeline — IFR prune + KD fine-tune + INT4 quantization.
+# Equivalent CLI: attention-lp run --exp-id my_full \
+#   --pruning ifr --threshold-factor 0.5 \
+#   --finetune --kd --epochs 3 \
+#   --quantize --bits 4 --quant-type nf4
+experiment_id: my_full
+description: "IFR (t=0.5) + FT + KD + INT4"
+base_model: CohereForAI/aya-expanse-8b
+seed: 42
+lang_pair: cs-de
+pruning:
+  method: ifr
+  threshold_factor: 0.5   # auto-select layers below threshold * max importance
+  scores_path: experiments/results/ifr_scores.json
+finetuning:
+  enabled: true
+  epochs: 3
+  qlora: false
+distillation:
+  enabled: true
+quantization:
+  enabled: true
+  bits: 4
+  quant_type: nf4

@@ -1,0 +1,17 @@
+base_model: CohereForAI/aya-expanse-8b
+description: IFR threshold=0.3 pruning, no FT, (English-Spanish)
+distillation:
+  enabled: false
+experiment_id: I5_t03_enes
+finetuning:
+  enabled: false
+  epochs: 3
+  qlora: false
+lang_pair: en-es
+pruning:
+  method: ifr
+  scores_path: experiments/results/ifr_scores_enes.json
+  threshold_factor: 0.3
+quantization:
+  enabled: false
+seed: 42
