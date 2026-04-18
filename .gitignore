@@ -36,7 +36,30 @@ uv.lock
 .DS_Store
 *.swp
 
-# SLURM logs
+# SLURM / runtime logs
 logs/
 slurm-*.out
+*.out
+*.err
 *.log
+
+# GPTQ library scratch
+gptqmodel_offload/
+gptq_log_*.log
+
+# Core dumps
+core.*
+
+# Generated result tables / scratch figures
+experiments/all_results.csv
+experiments/experiments_table.csv
+experiments/*.png
+experiments/*.jpg
+experiments/*.jpeg
+data
+data.zip
+_old
+
+# Ablation result artifacts (9+ GB, too big for GitHub)
+ablation/results/
+ablation/__pycache__/
